@@ -79,6 +79,9 @@ const advanced_tools = [
   "expand_ai",
 ];
 
+const allowedVideoFormats = ["mp4", "webm", "mkv", "mov"];
+const allowedResolutions = ["144p", "480p", "720p", "1080p"];
+
 // Conta quantas ferramentas avançadas existem neste projeto (independente de imagens)
 function count_advanced_tools(project) {
   const tools = project.tools || [];
@@ -2563,4 +2566,231 @@ router.post(
   }
 );
 
-module.exports = { router, process_msg };
+// ouvinte de resultados do worker
+function process_video_result_msg() {
+  read_video_result_msg(async (msg) => {
+    try {
+      const msg_content = JSON.parse(msg.content.toString());
+      const correlationId = msg_content.correlationId;
+      const status = msg_content.status;
+
+      const process = await Process.getOneByMsgId(correlationId);
+      if (!process) return;
+
+      const ownerId = process.user_id;
+      const projectId = process.project_id;
+      const runnerId = process.runner_id || ownerId;
+      const timestamp = new Date().toISOString();
+      const ws_msg_id = `video-ws-${uuidv4()}`;
+
+      await Process.delete(ownerId, projectId, process._id);
+
+      if (status === "error") {
+        send_msg_client_error(ws_msg_id, timestamp, runnerId, "VIDEO_ERR", "Erro ao converter vídeo no worker.");
+        return;
+      }
+
+      const result = {
+        type: "video",
+        file_name: `converted_${Date.now()}.${msg_content.output.key.split('.').pop()}`,
+        img_key: msg_content.output.key, 
+        img_id: null,
+        project_id: projectId,
+        user_id: ownerId,
+        token: process.token || 0,
+      };
+
+      await Result.create(result);
+
+      send_msg_client(ws_msg_id, timestamp, runnerId);
+      console.log(`[VIDEO] Conversão ${correlationId} concluída com sucesso!`);
+
+    } catch (err) {
+      console.error("[process_video_result_msg] error:", err);
+    }
+  });
+}
+
+// importar vídeo para um projeto
+router.post(
+  "/:user/:project/video/import",
+  checkSharePermission,
+  requireEditPermission,
+  enforcePresenceLimit,
+  requireProjectVersion,
+  async (req, res) => {
+    try {
+      const ownerId = req.params.user;
+      const projectId = req.params.project;
+
+      const { fileName, bucket, objectKey, fileHash } = req.body;
+
+      if (!fileName || !bucket || !objectKey) {
+        return res.status(400).jsonp("Faltam parâmetros obrigatórios para a importação do vídeo.");
+      }
+
+      const ext = fileName.split('.').pop().toLowerCase();
+      
+      // Usa a constante do topo do ficheiro
+      if (!allowedVideoFormats.includes(ext)) {
+        return res.status(400).jsonp(`Formato não suportado. Formatos válidos: ${allowedVideoFormats.join(", ")}`);
+      }
+
+      const project = await Project.getOne(ownerId, projectId);
+      if (!project) return res.status(404).jsonp("Project not found");
+
+      const same_name_media = project.imgs.filter(
+        (i) => path.basename(i.og_uri) == fileName
+      );
+
+      if (same_name_media.length > 0) {
+        return res
+          .status(400)
+          .jsonp("This project already has media with that name.");
+      }
+
+      const og_uri = `./videos/users/${ownerId}/projects/${projectId}/src/${fileName}`;
+      const new_uri = `./videos/users/${ownerId}/projects/${projectId}/out/${fileName}`;
+
+      project["imgs"].push({
+        og_uri: og_uri,
+        new_uri: new_uri,
+        og_img_key: objectKey,
+        og_sha256: fileHash || "unknown", 
+        mediaType: "video"
+      });
+
+      const updated = await Project.updateIfVersion(
+        ownerId,
+        projectId,
+        project,
+        req.expectedVersion
+      );
+
+      if (!updated) {
+        const fresh = await Project.getOne(ownerId, projectId);
+        return res.status(409).jsonp({
+          message: "Project version conflict",
+          serverVersion: fresh?.version ?? null,
+        });
+      }
+
+      res.set("X-Project-Version", String(updated.version));
+      return res.status(201).jsonp({ message: "Vídeo importado com sucesso." });
+
+    } catch (err) {
+      console.error("Erro ao importar vídeo:", err);
+      return res.status(500).jsonp("Error importing video.");
+    }
+  }
+);
+
+// obter resultados do vídeo exportado
+router.get(
+  "/:user/:project/video/export",
+  checkSharePermission,
+  async (req, res) => {
+    try {
+      const ownerId = req.params.user;
+      const projectId = req.params.project;
+
+      const project = await Project.getOne(ownerId, projectId);
+      if (!project) return res.status(404).jsonp("Project not found");
+
+      const committed = project.committedToken || 0;
+      
+      const results = await Result.getAllByToken(ownerId, projectId, committed);
+      const videoResults = results.filter((r) => r.type === "video");
+
+      const ans = { videos: [] };
+
+      for (const r of videoResults) {
+        const resp = await get_image_public_url(ownerId, projectId, "out", r.img_key);
+        const url = resp.data.url;
+
+        ans.videos.push({ 
+            og_img_id: r.img_id, 
+            name: r.file_name, 
+            url: url 
+        });
+      }
+
+      return res.status(200).jsonp(ans);
+
+    } catch (err) {
+      console.error("Erro ao obter URL do vídeo exportado:", err);
+      return res.status(500).jsonp("Error acquiring exported video url.");
+    }
+  }
+);
+
+// conversão de vídeo
+router.post("/:user/:project/video/convert", checkSharePermission, requireEditPermission, enforcePresenceLimit, requireProjectVersion, async (req, res) => {
+  const ownerId = req.params.user;
+  const runnerUserId = getCallerId(req);
+  const projectId = req.params.project;
+
+  try {
+    const project = await Project.getOne(ownerId, projectId);
+    if (!project) return res.status(404).jsonp("Project not found");
+
+    const { bucket, inputKey, targetFormat, targetResolution } = req.body;
+
+    if (!bucket || !inputKey || !targetFormat || !targetResolution) {
+      return res.status(400).jsonp("Faltam parâmetros obrigatórios para a conversão de vídeo.");
+    }
+
+    // Usam as constantes do topo do ficheiro
+    if (!allowedVideoFormats.includes(targetFormat.toLowerCase())) {
+        return res.status(400).jsonp(`Formato não suportado. Formatos válidos: ${allowedVideoFormats.join(", ")}`);
+    }
+
+    if (!allowedResolutions.includes(targetResolution.toLowerCase())) {
+        return res.status(400).jsonp(`Resolução não suportada. Resoluções válidas: ${allowedResolutions.join(", ")}`);
+    }
+
+    const msg_id = `video-convert-${uuidv4()}`;
+    const correlation_id = `job-${uuidv4()}`;
+    const timestamp = new Date().toISOString();
+
+    const process = {
+      user_id: ownerId,
+      runner_id: runnerUserId,
+      project_id: projectId,
+      img_id: null,
+      msg_id: correlation_id,
+      cur_pos: 0,
+      og_img_uri: `s3://${bucket}/${inputKey}`,
+      new_img_uri: `s3://${bucket}/${projectId}/out/video_${Date.now()}.${targetFormat}`,
+      cancelToken: project.cancelToken || 0,
+      token: project.activeToken || 0,
+      procedure: "video_convert"
+    };
+
+    await Process.create(process);
+    
+    const { send_msg_video_convert } = require("../utils/project_msg");
+    
+    send_msg_video_convert(
+      msg_id,
+      correlation_id,
+      timestamp,
+      bucket,
+      inputKey,
+      projectId,
+      targetFormat,
+      targetResolution
+    );
+
+    return res.status(202).jsonp({ 
+      message: "Conversão iniciada com sucesso",
+      jobId: correlation_id 
+    });
+
+  } catch (err) {
+    console.error("Erro ao solicitar conversão de vídeo:", err);
+    return res.status(500).jsonp("Error processing video conversion");
+  }
+});
+
+module.exports = { router, process_msg, process_video_result_msg };
