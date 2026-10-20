@@ -860,4 +860,94 @@ router.post("/:user/:project/dirty", auth.checkToken, (req, res) => {
 
 // ================== END PRESENCE ==================
 
+// ================== VIDEO ROUTES ==================
+
+// importar video
+router.post(
+  "/:user/:project/video/import",
+  auth.checkToken,
+  function (req, res, next) {
+    const ownerId = req.query.owner || req.params.user;
+    const callerId = req.authUserId || req.params.user;
+
+    axios
+      .post(
+        projectsURL + `${ownerId}/${req.params.project}/video/import`,
+        req.body,
+        {
+          httpsAgent,
+          params: req.query.share ? { share: req.query.share } : undefined,
+          headers: {
+            Authorization: req.headers["authorization"],
+            "X-Project-Version": req.headers["x-project-version"],
+            "X-Caller-Id": callerId,
+          },
+        }
+      )
+      .then((resp) => {
+        if (resp.headers?.["x-project-version"]) {
+          res.set("X-Project-Version", resp.headers["x-project-version"]);
+        }
+        return res.status(201).jsonp(resp.data);
+      })
+      .catch((err) => forwardAxiosError(res, err, "Error importing video"));
+  }
+);
+
+// converter video
+router.post(
+  "/:user/:project/video/convert",
+  auth.checkToken,
+  function (req, res, next) {
+    const ownerId = req.query.owner || req.params.user;
+    const callerId = req.authUserId || req.params.user;
+
+    axios
+      .post(
+        projectsURL + `${ownerId}/${req.params.project}/video/convert`,
+        req.body,
+        {
+          httpsAgent,
+          params: req.query.share ? { share: req.query.share } : undefined,
+          headers: {
+            Authorization: req.headers["authorization"],
+            "X-Project-Version": req.headers["x-project-version"],
+            "X-Caller-Id": callerId,
+          },
+        }
+      )
+      .then((resp) => {
+        if (resp.headers?.["x-project-version"]) {
+          res.set("X-Project-Version", resp.headers["x-project-version"]);
+        }
+        return res.status(202).jsonp(resp.data);
+      })
+      .catch((err) => forwardAxiosError(res, err, "Error converting video"));
+  }
+);
+
+/// exportar video
+router.get(
+  "/:user/:project/video/export",
+  auth.checkToken,
+  function (req, res, next) {
+    const ownerId = req.query.owner || req.params.user;
+    const callerId = req.authUserId || req.params.user;
+
+    axios
+      .get(projectsURL + `${ownerId}/${req.params.project}/video/export`, {
+        httpsAgent,
+        params: req.query.share ? { share: req.query.share } : undefined,
+        headers: {
+          Authorization: req.headers["authorization"],
+          "X-Caller-Id": callerId,
+        },
+      })
+      .then((resp) => res.status(200).send(resp.data))
+      .catch((err) => forwardAxiosError(res, err, "Error exporting video"));
+  }
+);
+
+// ================== END VIDEO ROUTES ==================
+
 module.exports = router;

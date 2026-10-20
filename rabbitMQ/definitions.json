@@ -165,6 +165,27 @@
             "durable": true,
             "auto_delete": false,
             "arguments": {}
+        },
+        {
+            "name": "video_convert_queue",
+            "vhost": "/",
+            "durable": true,
+            "auto_delete": false,
+            "arguments": {}
+        },
+        {
+            "name": "video_convert_cancel_queue",
+            "vhost": "/",
+            "durable": true,
+            "auto_delete": false,
+            "arguments": {}
+        },
+        {
+            "name": "video_convert_result_queue",
+            "vhost": "/",
+            "durable": true,
+            "auto_delete": false,
+            "arguments": {}
         }
     ],
     "exchanges": [
@@ -329,6 +350,30 @@
             "destination": "ws_queue",
             "destination_type": "queue",
             "routing_key": "ws_queue",
+            "arguments": {}
+        },
+        {
+            "source": "picturas",
+            "vhost": "/",
+            "destination": "video_convert_queue",
+            "destination_type": "queue",
+            "routing_key": "video_convert_queue",
+            "arguments": {}
+        },
+        {
+            "source": "picturas",
+            "vhost": "/",
+            "destination": "video_convert_cancel_queue",
+            "destination_type": "queue",
+            "routing_key": "video_convert_cancel_queue",
+            "arguments": {}
+        },
+        {
+            "source": "picturas",
+            "vhost": "/",
+            "destination": "video_convert_result_queue",
+            "destination_type": "queue",
+            "routing_key": "video_convert_result_queue",
             "arguments": {}
         }
     ]
