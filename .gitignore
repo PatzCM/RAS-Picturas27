@@ -12,4 +12,10 @@ backups/
 # ficheiros de ambiente locais (nunca devem ir para o repo)
 .env
 
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
 venv

@@ -1,4 +1,5 @@
 const s3 = require("./s3Client");
+const createBucket = require("./createBucket");
 
 // Presigned URL reachable only inside the Docker network (http://seaweedfs:9000/...),
 // for services that download the image themselves.
@@ -25,4 +26,35 @@ async function getPublicUrl(userId, projectId, stage, imageName) {
   return url.replace(internal, process.env.FRONTEND_URL + "/s3");
 }
 
-module.exports = { getInternalUrl, getPublicUrl };
+// Presigned PUT URL for direct upload to S3 from services inside the Docker network.
+async function getInternalPutUrl(userId, projectId, stage, fileName, contentType) {
+  const bucketName = `user-${userId}`;
+  await createBucket(bucketName);
+
+  const params = {
+    Bucket: bucketName,
+    Key: `${projectId}/${stage}/${fileName}`,
+    Expires: 60 * 60,
+  };
+
+  if (contentType) {
+    params.ContentType = contentType;
+  }
+
+  try {
+    return await s3.getSignedUrlPromise("putObject", params);
+  } catch (error) {
+    console.error("Erro ao gerar URL presignada de PUT:", error.message);
+    throw error;
+  }
+}
+
+// Presigned PUT URL with host rewritten to nginx /s3 proxy path for direct browser upload.
+async function getPublicPutUrl(userId, projectId, stage, fileName, contentType) {
+  const url = await getInternalPutUrl(userId, projectId, stage, fileName, contentType);
+  const internal = `http://${process.env.S3_ENDPOINT || "seaweedfs:9000"}`;
+  return url.replace(internal, process.env.FRONTEND_URL + "/s3");
+}
+
+module.exports = { getInternalUrl, getPublicUrl, getInternalPutUrl, getPublicPutUrl };
+

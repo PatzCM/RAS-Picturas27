@@ -459,6 +459,28 @@ services:
       rabbitmq:
         condition: service_healthy
 
+  video_convert_tool:
+    build:
+      context: ./Tools
+      dockerfile: video_convert/Dockerfile
+    restart: on-failure
+    networks:
+      - elk
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      seaweedfs:
+        condition: service_started
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USER=user
+      - RABBITMQ_PASS=password
+      - S3_ENDPOINT=http://seaweedfs:9000
+      - S3_ACCESS_KEY=admin
+      - S3_SECRET_KEY=admin123
+      - S3_REGION=us-east-1
+
   frontend:
     build: ./frontend
     networks:

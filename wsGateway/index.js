@@ -108,6 +108,25 @@ function process_msg() {
                 io.to(`project:${projectId}`).emit("project-updated", { projectId, version });
             }
         }
+
+        // video convert progress
+        else if (msg_content.type === "video-convert-progress") {
+            const user = msg_content.user || msg_content.runnerId;
+            const projectId = msg_content.projectId;
+            const payload = {
+                correlationId: msg_content.correlationId,
+                progress: msg_content.progress,
+                status: msg_content.status,
+                timestamp: msg_content.timestamp,
+            };
+
+            if (user) {
+                io.to(user).emit("video-convert-progress", payload);
+            }
+            if (projectId) {
+                io.to(`project:${projectId}`).emit("video-convert-progress", payload);
+            }
+        }
     })
 }
 

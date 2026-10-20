@@ -862,6 +862,31 @@ router.post("/:user/:project/dirty", auth.checkToken, (req, res) => {
 
 // ================== VIDEO ROUTES ==================
 
+// presigned upload url
+router.get(
+  "/:user/:project/video/upload-url",
+  auth.checkToken,
+  function (req, res, next) {
+    const ownerId = req.query.owner || req.params.user;
+    const callerId = req.authUserId || req.params.user;
+
+    axios
+      .get(projectsURL + `${ownerId}/${req.params.project}/video/upload-url`, {
+        httpsAgent,
+        params: {
+          ...req.query,
+          share: req.query.share ? req.query.share : undefined,
+        },
+        headers: {
+          Authorization: req.headers["authorization"],
+          "X-Caller-Id": callerId,
+        },
+      })
+      .then((resp) => res.status(200).send(resp.data))
+      .catch((err) => forwardAxiosError(res, err, "Error generating video upload URL"));
+  }
+);
+
 // importar video
 router.post(
   "/:user/:project/video/import",

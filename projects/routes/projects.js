@@ -2585,15 +2585,22 @@ function process_video_result_msg() {
 
       await Process.delete(ownerId, projectId, process._id);
 
-      if (status === "error") {
-        send_msg_client_error(ws_msg_id, timestamp, runnerId, "VIDEO_ERR", "Erro ao converter vídeo no worker.");
+      if (status === "error" || status === "failed") {
+        const errorMsg = msg_content.error || "Erro ao converter vídeo no worker.";
+        send_msg_client_error(ws_msg_id, timestamp, runnerId, "VIDEO_ERR", errorMsg);
+        return;
+      }
+
+      const outputKey = msg_content.output?.key || msg_content.result?.key || msg_content.outputKey;
+      if (!outputKey) {
+        send_msg_client_error(ws_msg_id, timestamp, runnerId, "VIDEO_ERR", "Resultado de vídeo sem key no S3.");
         return;
       }
 
       const result = {
         type: "video",
-        file_name: `converted_${Date.now()}.${msg_content.output.key.split('.').pop()}`,
-        img_key: msg_content.output.key, 
+        file_name: `converted_${Date.now()}.${outputKey.split('.').pop()}`,
+        img_key: outputKey, 
         img_id: null,
         project_id: projectId,
         user_id: ownerId,
@@ -2610,6 +2617,33 @@ function process_video_result_msg() {
     }
   });
 }
+
+// obter presigned PUT URL para upload direto de vídeo para o SeaweedFS (S3)
+router.get(
+  "/:user/:project/video/upload-url",
+  checkSharePermission,
+  requireEditPermission,
+  async (req, res) => {
+    try {
+      const ownerId = req.params.user;
+      const projectId = req.params.project;
+      const fileName = req.query.fileName;
+      const contentType = req.query.contentType || "video/mp4";
+
+      if (!fileName) {
+        return res.status(400).jsonp("Falta o parâmetro fileName.");
+      }
+
+      const { get_upload_presigned_url } = require("../utils/imageStorage");
+      const resp = await get_upload_presigned_url(ownerId, projectId, "src", fileName, contentType);
+
+      return res.status(200).jsonp(resp.data);
+    } catch (err) {
+      console.error("Erro ao gerar upload presigned URL:", err);
+      return res.status(500).jsonp("Error generating presigned upload URL.");
+    }
+  }
+);
 
 // importar vídeo para um projeto
 router.post(
