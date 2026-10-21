@@ -1,5 +1,6 @@
 const express = require("express");
 const uploadRoutes = require("./route/upload");
+const uploadVideoRoutes = require("./route/uploadVideo");
 const imageRoutes = require("./route/images");
 const deleteRoutes = require("./route/delete");
 const copyRoutes = require("./route/copy"); 
@@ -7,6 +8,7 @@ const copyRoutes = require("./route/copy");
 const app = express();
 
 app.use("/upload", uploadRoutes);
+app.use("/upload-video", uploadVideoRoutes);
 app.use("/image", imageRoutes);
 app.use("/delete", deleteRoutes);
 app.use("/copy", copyRoutes); 
