@@ -7,12 +7,15 @@ const { v4: uuidv4 } = require("uuid");
 async function uploadVideo(userId, projectId, file, stage) {
   const bucketName = `user-${userId}`;
 
-  const videoKey = `${projectId}/${stage}/${uuidv4()}.${videoFormats[file.mimetype]}`;
+  const fileName = `${uuidv4()}.${videoFormats[file.mimetype]}`;
+  const videoKey = `${projectId}/${stage}/${fileName}`;
   const params = {
     Bucket: bucketName,
     Key: videoKey,
     Body: fs.createReadStream(file.path),
     ContentType: file.mimetype,
+    // Faz com que o browser descarregue o vídeo em vez de o abrir.
+    ContentDisposition: `attachment; filename="${fileName}"`,
   };
 
   try {
