@@ -82,8 +82,8 @@ const advanced_tools = [
   "expand_ai",
 ];
 
-const allowedVideoFormats = ["mp4", "webm", "mkv", "mov"];
-const allowedResolutions = ["144p", "480p", "720p", "1080p"];
+const allowedVideoFormats = ["original", "mp4", "webm", "mkv", "mov"];
+const allowedResolutions = ["original", "144p", "480p", "720p", "1080p"];
 
 // Conta quantas ferramentas avançadas existem neste projeto (independente de imagens)
 function count_advanced_tools(project) {
@@ -2615,6 +2615,30 @@ function process_video_result_msg() {
 
       await Result.create(result);
 
+      // Adicionar o vídeo convertido à biblioteca do projeto (RN4, REQ-VID-LIB-001)
+      const currentProject = await Project.getOne(ownerId, projectId);
+      if (currentProject) {
+        currentProject.imgs = currentProject.imgs || [];
+        currentProject.imgs.push({
+          og_uri: `./videos/users/${ownerId}/projects/${projectId}/src/${keyName}`,
+          new_uri: `./videos/users/${ownerId}/projects/${projectId}/out/${keyName}`,
+          og_img_key: keyName,
+          og_sha256: "converted",
+          mediaType: "video",
+        });
+
+        const newCommitted = Math.max(currentProject.committedToken || 0, process.token || 0);
+
+        await Project.updateRaw(ownerId, projectId, {
+          $set: {
+            imgs: currentProject.imgs,
+            committedToken: newCommitted,
+            resultsToken: newCommitted,
+          },
+          $inc: { version: 1 }
+        });
+      }
+
       send_msg_client(ws_msg_id, timestamp, runnerId);
       console.log(`[VIDEO] Conversão ${correlationId} concluída com sucesso!`);
 
@@ -2785,12 +2809,15 @@ router.post("/:user/:project/video/convert", checkSharePermission, requireEditPe
     const resolvedBucket = bucket || `user-${ownerId}`;
     const resolvedInputKey = inputKey.includes("/") ? inputKey : `${projectId}/src/${inputKey}`;
 
+    const targetFormatNorm = (targetFormat || "original").toLowerCase();
+    const targetResNorm = (targetResolution || "original").toLowerCase();
+
     // Usam as constantes do topo do ficheiro
-    if (!allowedVideoFormats.includes(targetFormat.toLowerCase())) {
+    if (!allowedVideoFormats.includes(targetFormatNorm)) {
         return res.status(400).jsonp(`Formato não suportado. Formatos válidos: ${allowedVideoFormats.join(", ")}`);
     }
 
-    if (!allowedResolutions.includes(targetResolution.toLowerCase())) {
+    if (!allowedResolutions.includes(targetResNorm)) {
         return res.status(400).jsonp(`Resolução não suportada. Resoluções válidas: ${allowedResolutions.join(", ")}`);
     }
 
@@ -2806,7 +2833,7 @@ router.post("/:user/:project/video/convert", checkSharePermission, requireEditPe
       msg_id: correlation_id,
       cur_pos: 0,
       og_img_uri: `s3://${resolvedBucket}/${resolvedInputKey}`,
-      new_img_uri: `s3://${resolvedBucket}/${projectId}/out/video_${Date.now()}.${targetFormat}`,
+      new_img_uri: `s3://${resolvedBucket}/${projectId}/out/video_${Date.now()}.${targetFormatNorm}`,
       cancelToken: project.cancelToken || 0,
       token: project.activeToken || 0,
       procedure: "video_convert"
@@ -2823,8 +2850,8 @@ router.post("/:user/:project/video/convert", checkSharePermission, requireEditPe
       resolvedBucket,
       resolvedInputKey,
       projectId,
-      targetFormat,
-      targetResolution
+      targetFormatNorm,
+      targetResNorm
     );
 
     return res.status(202).jsonp({ 

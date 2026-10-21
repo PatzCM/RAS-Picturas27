@@ -42,6 +42,7 @@ export function ProjectImage({ image, animation = true }: ImageItemProps) {
 
   const [loaded, setLoaded] = useState<boolean>(false);
   const [open, setOpen] = useState<boolean>(false);
+  const [convertDialogOpen, setConvertDialogOpen] = useState<boolean>(false);
 
   const { _id: pid, version } = useProjectInfo();
   const session = useSession();
@@ -64,7 +65,8 @@ export function ProjectImage({ image, animation = true }: ImageItemProps) {
     !!image.name?.match(/\.(mp4|webm|mkv|mov)$/i);
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <>
+      <Dialog open={open} onOpenChange={setOpen}>
       <ContextMenu>
         <ContextMenuTrigger>
           <Card className="group relative overflow-hidden size-full">
@@ -138,6 +140,18 @@ export function ProjectImage({ image, animation = true }: ImageItemProps) {
           </Card>
         </ContextMenuTrigger>
         <ContextMenuContent>
+          {isVideo && mode !== "results" && (
+            <ContextMenuItem
+              className="flex justify-between cursor-pointer"
+              onClick={(e) => {
+                e.stopPropagation();
+                setConvertDialogOpen(true);
+              }}
+            >
+              <span>Converter Vídeo</span>
+              <Film className="size-4 text-indigo-500" />
+            </ContextMenuItem>
+          )}
           <DialogTrigger asChild onClick={(e) => e.stopPropagation()}>
             {mode !== "results" && (
               <ContextMenuItem
@@ -230,5 +244,15 @@ export function ProjectImage({ image, animation = true }: ImageItemProps) {
         </div>
       </DialogContent>
     </Dialog>
+
+    {isVideo && (
+      <VideoConvertTool
+        targetVideoId={image._id}
+        open={convertDialogOpen}
+        onOpenChange={setConvertDialogOpen}
+        trigger={null}
+      />
+    )}
+    </>
   );
 }

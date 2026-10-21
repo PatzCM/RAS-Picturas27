@@ -29,30 +29,46 @@ import { useToast } from "@/hooks/use-toast";
 import { useRouter, useSearchParams } from "next/navigation";
 
 const FORMAT_OPTIONS = [
-  { value: "mp4", label: "MP4 (H.264 / AAC - Universal)" },
-  { value: "webm", label: "WebM (VP9 - Web Optimized)" },
-  { value: "mkv", label: "MKV (Matroska Container)" },
-  { value: "mov", label: "MOV (QuickTime Video)" },
+  { value: "original", label: "Original (Manter formato atual)" },
+  { value: "mp4", label: "MP4 (Universal)" },
+  { value: "webm", label: "WebM (Otimizado Web)" },
+  { value: "mkv", label: "MKV (Matroska)" },
+  { value: "mov", label: "MOV (QuickTime)" },
 ];
 
 const RESOLUTION_OPTIONS = [
-  { value: "original", label: "Original (Keep Source Resolution)" },
-  { value: "1080p", label: "1080p (Full HD - 1920x1080)" },
-  { value: "720p", label: "720p (HD - 1280x720)" },
-  { value: "480p", label: "480p (SD - 854x480)" },
-  { value: "360p", label: "360p (Low - 640x360)" },
+  { value: "original", label: "Original (Manter resolução atual)" },
+  { value: "144p", label: "144p (Muito Baixa)" },
+  { value: "480p", label: "480p (SD)" },
+  { value: "720p", label: "720p (HD)" },
+  { value: "1080p", label: "1080p (Full HD)" },
 ];
+
+interface VideoConvertToolProps {
+  disabled?: boolean;
+  targetVideoId?: string;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  trigger?: React.ReactNode | null;
+}
 
 export default function VideoConvertTool({
   disabled = false,
   targetVideoId,
-}: {
-  disabled?: boolean;
-  targetVideoId?: string;
-}) {
-  const [open, setOpen] = useState(false);
+  open: openProp,
+  onOpenChange,
+  trigger,
+}: VideoConvertToolProps) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isControlled = openProp !== undefined;
+  const open = isControlled ? openProp : internalOpen;
+  const setOpen = (val: boolean) => {
+    if (onOpenChange) onOpenChange(val);
+    if (!isControlled) setInternalOpen(val);
+  };
+
   const [selectedVideoKey, setSelectedVideoKey] = useState<string>("");
-  const [targetFormat, setTargetFormat] = useState<string>("mp4");
+  const [targetFormat, setTargetFormat] = useState<string>("original");
   const [targetResolution, setTargetResolution] = useState<string>("original");
   const [isConverting, setIsConverting] = useState(false);
   const [progress, setProgress] = useState<number>(0);
@@ -87,7 +103,7 @@ export default function VideoConvertTool({
   const projectVideos = project.imgs?.filter(isVideoItem) || [];
 
   useEffect(() => {
-    if (projectVideos.length > 0 && !selectedVideoKey) {
+    if (projectVideos.length > 0) {
       if (targetVideoId) {
         const found = projectVideos.find((v) => v._id === targetVideoId);
         if (found) {
@@ -95,9 +111,11 @@ export default function VideoConvertTool({
           return;
         }
       }
-      setSelectedVideoKey(projectVideos[0].name);
+      if (!selectedVideoKey) {
+        setSelectedVideoKey(projectVideos[0].name);
+      }
     }
-  }, [projectVideos, targetVideoId, selectedVideoKey]);
+  }, [projectVideos, targetVideoId, open]);
 
   useEffect(() => {
     if (!socket.data) return;
@@ -174,31 +192,35 @@ export default function VideoConvertTool({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !isConverting && setOpen(v)}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <DialogTrigger asChild>
-            <Button
-              variant="outline"
-              className="size-8 relative bg-indigo-50 hover:bg-indigo-100 border-indigo-200 dark:bg-indigo-950/40 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400"
-              disabled={disabled}
-            >
-              <Film className="size-4" />
-              <span className="sr-only">Convert Video</span>
-            </Button>
-          </DialogTrigger>
-        </TooltipTrigger>
-        <TooltipContent className="ml-2 bg-indigo-600 text-white" side="right">
-          Convert Video (FFmpeg / RabbitMQ)
-        </TooltipContent>
-      </Tooltip>
+      {trigger === null ? null : trigger !== undefined ? (
+        <DialogTrigger asChild>{trigger}</DialogTrigger>
+      ) : (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DialogTrigger asChild>
+              <Button
+                variant="outline"
+                className="size-8 relative bg-indigo-50 hover:bg-indigo-100 border-indigo-200 dark:bg-indigo-950/40 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400"
+                disabled={disabled}
+              >
+                <Film className="size-4" />
+                <span className="sr-only">Converter Vídeo</span>
+              </Button>
+            </DialogTrigger>
+          </TooltipTrigger>
+          <TooltipContent className="ml-2 bg-indigo-600 text-white" side="right">
+            Converter Vídeo (FFmpeg / RabbitMQ)
+          </TooltipContent>
+        </Tooltip>
+      )}
 
       <DialogContent className="sm:max-w-[480px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Film className="size-5 text-indigo-600" /> Convert Video
+            <Film className="size-5 text-indigo-600" /> Converter Vídeo
           </DialogTitle>
           <DialogDescription>
-            Convert video container format and resolution using Docker FFmpeg worker and RabbitMQ.
+            Converter formato de contentor de vídeo e resolução através do worker Docker FFmpeg e RabbitMQ.
           </DialogDescription>
         </DialogHeader>
 

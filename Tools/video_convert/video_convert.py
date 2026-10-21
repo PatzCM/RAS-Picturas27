@@ -253,14 +253,24 @@ def main():
             output_stage = output_res.get("stage", "out")
 
             target_format = params.get("targetFormat", "mp4").lower()
-            target_resolution = params.get("targetResolution", "720p")
+            target_resolution = params.get("targetResolution", "original")
+
+            # Normalizar targetResolution: se for 'original', 'none' ou vazio, passar None para manter a resolução original no core
+            res_clean = None
+            if target_resolution and str(target_resolution).strip().lower() not in ("original", "none", ""):
+                res_clean = str(target_resolution).strip().lower()
+
+            # Normalizar targetFormat: se for 'original', manter formato original de entrada
+            if target_format == "original":
+                ext = os.path.splitext(input_key)[1].replace(".", "").lower()
+                target_format = ext if ext in ("mp4", "webm", "mkv", "mov") else "mp4"
 
             logger.info("=" * 60)
             logger.info(f"📥 Recebido pedido de conversão:")
             logger.info(f"   MessageId: {message_id}")
             logger.info(f"   CorrelationId: {correlation_id}")
             logger.info(f"   Entrada: s3://{input_bucket}/{input_key}")
-            logger.info(f"   Destino: formato={target_format}, resolução={target_resolution}")
+            logger.info(f"   Destino: formato={target_format}, resolução={res_clean or 'original (manter)'}")
             logger.info("=" * 60)
 
             # Verificar se já foi cancelado antes de iniciar
@@ -300,7 +310,7 @@ def main():
                 "inputPath": local_input,
                 "outputPath": local_output,
                 "targetFormat": target_format,
-                "targetResolution": target_resolution,
+                "targetResolution": res_clean,
                 "timeoutMs": 15 * 60 * 1000  # Timeout de 15 minutos conforme requisito RNF
             }
 
@@ -316,6 +326,13 @@ def main():
             output_key = f"{project_id}/{output_stage}/{output_filename}"
 
             s3.upload_file(local_output, output_bucket, output_key)
+
+            # Também guardar em src/ para ficar disponível na biblioteca do projeto (RN4 / REQ-VID-LIB-001)
+            src_key = f"{project_id}/src/{output_filename}"
+            try:
+                s3.upload_file(local_output, output_bucket, src_key)
+            except Exception as e_src:
+                logger.warning(f"Não foi possível guardar cópia em src: {e_src}")
 
             # 4. Publicar resultado e progresso final 100%
             publish_ws_progress(ch, correlation_id, progress=100.0, status="completed", project_id=project_id)
