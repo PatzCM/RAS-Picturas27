@@ -19,3 +19,8 @@ __pycache__/
 .pytest_cache/
 
 venv
+
+# Documentos pessoais e guias (manter apenas no Obsidian)
+*GUIA*
+*ADHD*
+*CheatSheet*
