@@ -248,7 +248,7 @@ useEffect(() => {
                 <p className="text-gray-500 text-xl">
                   {mode === "results"
                     ? "No results found. Apply your changes and try again."
-                    : "Add some images to start."}
+                    : "Add some images or import a video to start."}
                 </p>
               </div>
             )}

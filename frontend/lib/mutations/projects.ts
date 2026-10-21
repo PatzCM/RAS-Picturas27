@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   addProject,
   addProjectImages,
+  importProjectVideo,
   addProjectTool,
   deleteProject,
   deleteProjectImages,
@@ -145,6 +146,46 @@ export const useAddProjectImages = (uid: string, pid: string, token: string, own
       bumpProjectVersion(qc, projectKey, newVersionHeader);
       qc.invalidateQueries({ queryKey: projectKey, refetchType: "all" });
       qc.invalidateQueries({ queryKey: ["projectImages", uid, pid, token, ownerId, shareId], refetchType: "all" });
+    },
+  });
+};
+
+export const useImportProjectVideo = (
+  uid: string,
+  pid: string,
+  token: string,
+  ownerId?: string,
+  shareId?: string,
+) => {
+  const qc = useQueryClient();
+  const projectKey = ["project", uid, pid, token, ownerId, shareId];
+
+  return useMutation({
+    mutationFn: (args: {
+      file: File;
+      projectVersion: number;
+      onProgress?: (percent: number) => void;
+    }) =>
+      importProjectVideo({
+        uid,
+        pid,
+        token,
+        file: args.file,
+        ownerId,
+        shareId,
+        projectVersion: args.projectVersion,
+        onProgress: args.onProgress,
+      }),
+
+    onSuccess: (data) => {
+      if (data?.version) {
+        bumpProjectVersion(qc, projectKey, String(data.version));
+      }
+      qc.invalidateQueries({ queryKey: projectKey, refetchType: "all" });
+      qc.invalidateQueries({
+        queryKey: ["projectImages", uid, pid, token, ownerId, shareId],
+        refetchType: "all",
+      });
     },
   });
 };

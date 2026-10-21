@@ -838,6 +838,7 @@ router.get("/:user/:project", checkSharePermission, async (req, res, next) => {
             _id: img._id,
             name: path.basename(img.og_uri),
             url: url,
+            mediaType: img.mediaType || "image",
           });
         } catch (_) {
           res.status(404).jsonp(`Error acquiring image's url`);
@@ -895,6 +896,7 @@ router.get("/:user/:project/imgs", checkSharePermission, async (req, res, next) 
               _id: img._id,
               name: path.basename(img.og_uri),
               url: url,
+              mediaType: img.mediaType || "image",
             });
           } catch (_) {
             res.status(404).jsonp(`Error acquiring image's url`);
@@ -2689,10 +2691,12 @@ router.post(
       const og_uri = `./videos/users/${ownerId}/projects/${projectId}/src/${fileName}`;
       const new_uri = `./videos/users/${ownerId}/projects/${projectId}/out/${fileName}`;
 
+      const keyName = path.basename(objectKey || fileName);
+
       project["imgs"].push({
         og_uri: og_uri,
         new_uri: new_uri,
-        og_img_key: objectKey,
+        og_img_key: keyName,
         og_sha256: fileHash || "unknown", 
         mediaType: "video"
       });

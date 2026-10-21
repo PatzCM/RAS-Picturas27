@@ -38,6 +38,7 @@ export interface ProjectImage {
   _id: string;
   name: string;
   url: string;
+  mediaType?: "image" | "video";
 }
 
 export interface ProjectImageText {
@@ -462,6 +463,78 @@ export const addProjectImages = async ({
   }
     return lastVersion;
 
+};
+
+export const importProjectVideo = async ({
+  uid,
+  pid,
+  token,
+  file,
+  ownerId,
+  shareId,
+  projectVersion,
+  onProgress,
+}: {
+  uid: string;
+  pid: string;
+  token: string;
+  file: File;
+  ownerId?: string;
+  shareId?: string;
+  projectVersion: number;
+  onProgress?: (percent: number) => void;
+}) => {
+  const pathUid = shareId ? (ownerId ?? uid) : uid;
+  const query = buildQuery({ ownerId, shareId });
+
+  // 1. Obter presigned PUT URL
+  const separator = query ? "&" : "?";
+  const urlQuery = `${query}${separator}fileName=${encodeURIComponent(file.name)}&contentType=${encodeURIComponent(file.type || "video/mp4")}`;
+
+  const presignedResp = await api.get(
+    `/projects/${pathUid}/${pid}/video/upload-url${urlQuery}`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+    }
+  );
+
+  const { url: uploadUrl, bucket, key } = presignedResp.data;
+
+  // 2. Upload direto para o S3 via presigned PUT
+  await axios.put(uploadUrl, file, {
+    headers: {
+      "Content-Type": file.type || "video/mp4",
+    },
+    onUploadProgress: (progressEvent) => {
+      if (progressEvent.total && onProgress) {
+        const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+        onProgress(percent);
+      }
+    },
+  });
+
+  // 3. Registar o vídeo no projeto
+  const importResp = await api.post(
+    `/projects/${pathUid}/${pid}/video/import${query}`,
+    {
+      fileName: file.name,
+      bucket,
+      objectKey: key,
+      fileHash: "unknown",
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        "X-Project-Version": String(projectVersion),
+      },
+    }
+  );
+
+  const lastVersion = importResp.headers?.["x-project-version"];
+  return {
+    version: lastVersion ? Number(lastVersion) : projectVersion,
+  };
 };
 
 export const deleteProjectImages = async ({

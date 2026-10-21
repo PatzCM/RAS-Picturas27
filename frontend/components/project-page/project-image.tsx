@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
-import { Download, Trash } from "lucide-react";
+import { Download, Trash, Video, Play } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -58,42 +58,75 @@ export function ProjectImage({ image, animation = true }: ImageItemProps) {
   const downloadImage = useDownloadProjectImage(mode === "results");
   const { toast } = useToast();
 
+  const isVideo =
+    image.mediaType === "video" ||
+    !!image.name?.match(/\.(mp4|webm|mkv|mov)$/i);
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <ContextMenu>
         <ContextMenuTrigger>
           <Card className="group relative overflow-hidden size-full">
-            {/* Image */}
-            <div className="size-full relative grid z-0 grid-cols-1 grid-rows-1">
-              <Image
-                src={image.url}
-                unoptimized
-                height={500}
-                width={500}
-                alt={image.name}
-                className={cn(
-                  "size-full object-contain row-start-1 col-start-1 z-30",
-                  animation && "transition-all group-hover:scale-105",
+            {isVideo ? (
+              <div className="size-full relative flex items-center justify-center bg-zinc-950">
+                {!animation ? (
+                  <video
+                    src={image.url}
+                    controls
+                    className="size-full object-contain z-30"
+                    preload="metadata"
+                  />
+                ) : (
+                  <>
+                    <video
+                      src={image.url}
+                      className="size-full object-cover pointer-events-none opacity-80"
+                      preload="metadata"
+                      muted
+                    />
+                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center transition-all group-hover:bg-black/20">
+                      <div className="p-3 rounded-full bg-primary/90 text-primary-foreground shadow-lg group-hover:scale-110 transition-transform">
+                        <Play className="size-6 fill-current ml-0.5" />
+                      </div>
+                    </div>
+                    <div className="absolute top-2 left-2 px-2 py-0.5 rounded bg-black/70 text-white text-xs flex items-center gap-1 font-medium z-20">
+                      <Video className="size-3" /> Video
+                    </div>
+                  </>
                 )}
-                priority
-                onLoad={() => setLoaded(true)}
-              />
-              <Image
-                src={image.url}
-                unoptimized
-                width={500}
-                height={500}
-                className="object-cover row-start-1 col-start-1 size-full z-10"
-                alt={image.name + " blurred"}
-              />
-              <div className="row-start-1 col-start-1 backdrop-blur-sm size-full bg-black/30 z-20" />
-              {!loaded && (
-                <>
-                  <div className="row-start-1 col-start-1 z-40 bg-background size-full" />
-                  <Skeleton className="size-full row-start-1 col-start-1 z-50" />
-                </>
-              )}
-            </div>
+              </div>
+            ) : (
+              <div className="size-full relative grid z-0 grid-cols-1 grid-rows-1">
+                <Image
+                  src={image.url}
+                  unoptimized
+                  height={500}
+                  width={500}
+                  alt={image.name}
+                  className={cn(
+                    "size-full object-contain row-start-1 col-start-1 z-30",
+                    animation && "transition-all group-hover:scale-105",
+                  )}
+                  priority
+                  onLoad={() => setLoaded(true)}
+                />
+                <Image
+                  src={image.url}
+                  unoptimized
+                  width={500}
+                  height={500}
+                  className="object-cover row-start-1 col-start-1 size-full z-10"
+                  alt={image.name + " blurred"}
+                />
+                <div className="row-start-1 col-start-1 backdrop-blur-sm size-full bg-black/30 z-20" />
+                {!loaded && (
+                  <>
+                    <div className="row-start-1 col-start-1 z-40 bg-background size-full" />
+                    <Skeleton className="size-full row-start-1 col-start-1 z-50" />
+                  </>
+                )}
+              </div>
+            )}
           </Card>
         </ContextMenuTrigger>
         <ContextMenuContent>
