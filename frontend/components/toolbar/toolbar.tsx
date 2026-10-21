@@ -14,6 +14,7 @@ import ObjectAITool from "./object-ai-tool";
 import PeopleAITool from "./people-ai-tool";
 import TextAITool from "./text-ai-tool";
 import UpgradeAITool from "./upgrade-ai-tool";
+import VideoConvertTool from "./video-convert-tool";
 import { useClearProjectTools } from "@/lib/mutations/projects";
 import { useSession } from "@/providers/session-provider";
 import { useProjectInfo } from "@/providers/project-provider";
@@ -75,6 +76,7 @@ export function Toolbar() {
         <TextAITool disabled={disabled} />
         <ExpandAITool disabled={disabled} />
         <UpgradeAITool disabled={disabled} />
+        <VideoConvertTool disabled={false} />
         <AppliedToolsList />
       </div>
       <Dialog open={open} onOpenChange={setOpen}>

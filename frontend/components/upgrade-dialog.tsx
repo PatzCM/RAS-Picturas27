@@ -208,10 +208,19 @@ useEffect(() => {
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
-            <DialogFooter>
+            <DialogFooter className="flex gap-2 justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                className="w-1/2"
+                onClick={() => setIsOpen(false)}
+                disabled={isSubmitting}
+              >
+                Cancel
+              </Button>
               <Button
                 type="submit"
-                className="w-full inline-flex gap-1 items-center justify-center"
+                className="w-1/2 inline-flex gap-1 items-center justify-center"
                 disabled={isSubmitting}
                 onClick={handleSubmit}
               >

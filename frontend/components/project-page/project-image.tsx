@@ -1,8 +1,9 @@
 import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
-import { Download, Trash, Video, Play } from "lucide-react";
+import { Download, Trash, Video, Play, Film } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import VideoConvertTool from "../toolbar/video-convert-tool";
 import {
   Dialog,
   DialogTrigger,
@@ -70,12 +71,19 @@ export function ProjectImage({ image, animation = true }: ImageItemProps) {
             {isVideo ? (
               <div className="size-full relative flex items-center justify-center bg-zinc-950">
                 {!animation ? (
-                  <video
-                    src={image.url}
-                    controls
-                    className="size-full object-contain z-30"
-                    preload="metadata"
-                  />
+                  <div className="size-full flex flex-col items-center justify-center relative">
+                    <video
+                      src={image.url}
+                      controls
+                      className="size-full object-contain z-30"
+                      preload="metadata"
+                    />
+                    {mode !== "results" && (
+                      <div className="absolute top-4 right-4 z-40 flex items-center gap-2">
+                        <VideoConvertTool targetVideoId={image._id} />
+                      </div>
+                    )}
+                  </div>
                 ) : (
                   <>
                     <video
@@ -178,7 +186,17 @@ export function ProjectImage({ image, animation = true }: ImageItemProps) {
           <DialogTitle>Are you sure?</DialogTitle>
           <DialogDescription>This action cannot be undone.</DialogDescription>
         </DialogHeader>
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={(e) => {
+              setOpen(false);
+              e.stopPropagation();
+            }}
+          >
+            Cancel
+          </Button>
           <Button
             variant="destructive"
             onClick={(e) => {

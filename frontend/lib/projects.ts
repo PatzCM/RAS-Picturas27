@@ -235,18 +235,42 @@ export const addProject = async ({
     throw new Error("Failed to create project");
 
   const project = response.data;
+  let currentVersion = project.version;
 
-  if (images.length > 0) {
-    await addProjectImages({
+  const isVideo = (f: File) => {
+    const ext = "." + f.name.split(".").pop()?.toLowerCase();
+    return (
+      f.type.startsWith("video/") ||
+      [".mp4", ".webm", ".mkv", ".mov"].includes(ext)
+    );
+  };
+
+  const imageFiles = images.filter((f) => !isVideo(f));
+  const videoFiles = images.filter((f) => isVideo(f));
+
+  if (imageFiles.length > 0) {
+    const lastVersion = await addProjectImages({
       uid,
       pid: project._id,
       token,
-      images,
-      projectVersion: project.version,
+      images: imageFiles,
+      projectVersion: currentVersion,
     });
+    if (lastVersion) currentVersion = Number(lastVersion);
   }
 
-  return project;
+  for (const video of videoFiles) {
+    const res = await importProjectVideo({
+      uid,
+      pid: project._id,
+      token,
+      file: video,
+      projectVersion: currentVersion,
+    });
+    if (res?.version) currentVersion = Number(res.version);
+  }
+
+  return { ...project, version: currentVersion };
 };
 
 export const deleteProject = async ({
@@ -535,6 +559,50 @@ export const importProjectVideo = async ({
   return {
     version: lastVersion ? Number(lastVersion) : projectVersion,
   };
+};
+
+export const convertProjectVideo = async ({
+  uid,
+  pid,
+  token,
+  inputKey,
+  targetFormat,
+  targetResolution,
+  ownerId,
+  shareId,
+  projectVersion,
+}: {
+  uid: string;
+  pid: string;
+  token: string;
+  inputKey: string;
+  targetFormat: string;
+  targetResolution: string;
+  ownerId?: string;
+  shareId?: string;
+  projectVersion: number;
+}) => {
+  const pathUid = shareId ? (ownerId ?? uid) : uid;
+  const query = buildQuery({ ownerId, shareId });
+
+  const response = await api.post(
+    `/projects/${pathUid}/${pid}/video/convert${query}`,
+    {
+      bucket: `user-${pathUid}`,
+      inputKey,
+      targetFormat,
+      targetResolution,
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        "X-Project-Version": String(projectVersion),
+      },
+    }
+  );
+
+  return response.data;
 };
 
 export const deleteProjectImages = async ({

@@ -3,6 +3,7 @@ import {
   addProject,
   addProjectImages,
   importProjectVideo,
+  convertProjectVideo,
   addProjectTool,
   deleteProject,
   deleteProjectImages,
@@ -184,6 +185,45 @@ export const useImportProjectVideo = (
       qc.invalidateQueries({ queryKey: projectKey, refetchType: "all" });
       qc.invalidateQueries({
         queryKey: ["projectImages", uid, pid, token, ownerId, shareId],
+        refetchType: "all",
+      });
+    },
+  });
+};
+
+export const useConvertProjectVideo = (
+  uid: string,
+  pid: string,
+  token: string,
+  ownerId?: string,
+  shareId?: string,
+) => {
+  const qc = useQueryClient();
+  const projectKey = ["project", uid, pid, token, ownerId, shareId];
+
+  return useMutation({
+    mutationFn: (args: {
+      inputKey: string;
+      targetFormat: string;
+      targetResolution: string;
+      projectVersion: number;
+    }) =>
+      convertProjectVideo({
+        uid,
+        pid,
+        token,
+        inputKey: args.inputKey,
+        targetFormat: args.targetFormat,
+        targetResolution: args.targetResolution,
+        ownerId,
+        shareId,
+        projectVersion: args.projectVersion,
+      }),
+
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: projectKey, refetchType: "all" });
+      qc.invalidateQueries({
+        queryKey: ["projectResults", uid, pid, token, ownerId, shareId],
         refetchType: "all",
       });
     },

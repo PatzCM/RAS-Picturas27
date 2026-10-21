@@ -83,10 +83,18 @@ export function AddImagesDialog() {
           </DialogDescription>
         </DialogHeader>
         <ImageSubmissionArea onDrop={onDrop} />
-        <DialogFooter>
+        <DialogFooter className="flex gap-2 justify-end">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setOpen(false)}
+            disabled={addImages.isPending}
+          >
+            Cancel
+          </Button>
           <Button
             onClick={handleAdd}
-            disabled={images.length === 0}
+            disabled={images.length === 0 || addImages.isPending}
             className="inline-flex items-center gap-1"
           >
             <span>Add</span>

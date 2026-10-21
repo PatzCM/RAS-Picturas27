@@ -2602,11 +2602,12 @@ function process_video_result_msg() {
         return;
       }
 
+      const keyName = path.basename(outputKey);
       const result = {
         type: "video",
-        file_name: `converted_${Date.now()}.${outputKey.split('.').pop()}`,
-        img_key: outputKey, 
-        img_id: null,
+        file_name: keyName,
+        img_key: keyName, 
+        img_id: correlationId,
         project_id: projectId,
         user_id: ownerId,
         token: process.token || 0,
@@ -2777,9 +2778,12 @@ router.post("/:user/:project/video/convert", checkSharePermission, requireEditPe
 
     const { bucket, inputKey, targetFormat, targetResolution } = req.body;
 
-    if (!bucket || !inputKey || !targetFormat || !targetResolution) {
+    if (!inputKey || !targetFormat || !targetResolution) {
       return res.status(400).jsonp("Faltam parâmetros obrigatórios para a conversão de vídeo.");
     }
+
+    const resolvedBucket = bucket || `user-${ownerId}`;
+    const resolvedInputKey = inputKey.includes("/") ? inputKey : `${projectId}/src/${inputKey}`;
 
     // Usam as constantes do topo do ficheiro
     if (!allowedVideoFormats.includes(targetFormat.toLowerCase())) {
@@ -2801,8 +2805,8 @@ router.post("/:user/:project/video/convert", checkSharePermission, requireEditPe
       img_id: null,
       msg_id: correlation_id,
       cur_pos: 0,
-      og_img_uri: `s3://${bucket}/${inputKey}`,
-      new_img_uri: `s3://${bucket}/${projectId}/out/video_${Date.now()}.${targetFormat}`,
+      og_img_uri: `s3://${resolvedBucket}/${resolvedInputKey}`,
+      new_img_uri: `s3://${resolvedBucket}/${projectId}/out/video_${Date.now()}.${targetFormat}`,
       cancelToken: project.cancelToken || 0,
       token: project.activeToken || 0,
       procedure: "video_convert"
@@ -2816,8 +2820,8 @@ router.post("/:user/:project/video/convert", checkSharePermission, requireEditPe
       msg_id,
       correlation_id,
       timestamp,
-      bucket,
-      inputKey,
+      resolvedBucket,
+      resolvedInputKey,
       projectId,
       targetFormat,
       targetResolution
