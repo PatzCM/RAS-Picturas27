@@ -88,9 +88,37 @@ export function AddMediaDialog() {
       // 2. Upload videos via presigned S3 PUT se houver
       for (let i = 0; i < videoFiles.length; i++) {
         const v = videoFiles[i];
-        setProgressMsg(`Uploading video ${i + 1}/${videoFiles.length}: ${v.name}...`);
+        let fileToUpload = v;
+        const lower = v.name.toLowerCase();
+        if (!lower.includes("1080p") && !lower.includes("720p") && !lower.includes("480p") && !lower.includes("144p")) {
+          try {
+            const h = await new Promise<number | null>((resolve) => {
+              const vid = document.createElement("video");
+              vid.preload = "metadata";
+              const objUrl = URL.createObjectURL(v);
+              vid.onloadedmetadata = () => {
+                const height = vid.videoHeight || null;
+                URL.revokeObjectURL(objUrl);
+                resolve(height);
+              };
+              vid.onerror = () => {
+                URL.revokeObjectURL(objUrl);
+                resolve(null);
+              };
+              vid.src = objUrl;
+            });
+            if (h) {
+              const lastDot = v.name.lastIndexOf(".");
+              const baseName = lastDot !== -1 ? v.name.substring(0, lastDot) : v.name;
+              const fileExt = lastDot !== -1 ? v.name.substring(lastDot) : "";
+              fileToUpload = new File([v], `${baseName}_${h}p${fileExt}`, { type: v.type });
+            }
+          } catch (_) {}
+        }
+
+        setProgressMsg(`Uploading video ${i + 1}/${videoFiles.length}: ${fileToUpload.name}...`);
         const res = await importVideo.mutateAsync({
-          file: v,
+          file: fileToUpload,
           projectVersion: currentVersion,
           onProgress: (percent) => {
             setProgressVal(Math.min(95, 30 + Math.round((percent * 65) / 100)));

@@ -84,8 +84,39 @@ export function ImportVideoDialog() {
       return;
     }
 
-    setFile(selectedFile);
-    setProgress(0);
+    // Se o ficheiro não indicar resolução no nome, tentar detetar para normalizar (ex: teste.mp4 -> teste_720p.mp4)
+    const lower = selectedFile.name.toLowerCase();
+    if (!lower.includes("1080p") && !lower.includes("720p") && !lower.includes("480p") && !lower.includes("144p")) {
+      const vid = document.createElement("video");
+      vid.preload = "metadata";
+      const objUrl = URL.createObjectURL(selectedFile);
+      vid.onloadedmetadata = () => {
+        const h = vid.videoHeight;
+        URL.revokeObjectURL(objUrl);
+        if (h) {
+          const lastDot = selectedFile.name.lastIndexOf(".");
+          const baseName = lastDot !== -1 ? selectedFile.name.substring(0, lastDot) : selectedFile.name;
+          const fileExt = lastDot !== -1 ? selectedFile.name.substring(lastDot) : "";
+          const taggedFile = new File([selectedFile], `${baseName}_${h}p${fileExt}`, {
+            type: selectedFile.type,
+          });
+          setFile(taggedFile);
+          setProgress(0);
+          return;
+        }
+        setFile(selectedFile);
+        setProgress(0);
+      };
+      vid.onerror = () => {
+        URL.revokeObjectURL(objUrl);
+        setFile(selectedFile);
+        setProgress(0);
+      };
+      vid.src = objUrl;
+    } else {
+      setFile(selectedFile);
+      setProgress(0);
+    }
   }
 
   function handleFileChange(e: ChangeEvent<HTMLInputElement>) {

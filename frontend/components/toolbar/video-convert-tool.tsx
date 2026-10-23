@@ -123,6 +123,28 @@ export default function VideoConvertTool({
   };
 
   const projectVideos = project.imgs?.filter(isVideoItem) || [];
+  const currentVideo = projectVideos.find((v) => v.name === selectedVideoKey);
+  const [detectedResolution, setDetectedResolution] = useState<string | null>(null);
+
+  useEffect(() => {
+    setDetectedResolution(null);
+    if (!currentVideo?.url) return;
+
+    const vid = document.createElement("video");
+    vid.preload = "metadata";
+    vid.src = currentVideo.url;
+
+    vid.onloadedmetadata = () => {
+      const h = vid.videoHeight;
+      if (h) {
+        if (h >= 1080) setDetectedResolution("1080p (Full HD)");
+        else if (h >= 720) setDetectedResolution("720p (HD)");
+        else if (h >= 480) setDetectedResolution("480p (SD)");
+        else if (h >= 144) setDetectedResolution("144p (Baixa)");
+        else setDetectedResolution(`${h}p`);
+      }
+    };
+  }, [currentVideo?.url]);
 
   useEffect(() => {
     if (projectVideos.length > 0) {
@@ -295,13 +317,16 @@ export default function VideoConvertTool({
                 <div>
                   <span className="text-muted-foreground block text-[11px]">Resolução Atual:</span>
                   <span className="font-semibold">
-                    {selectedVideoKey.toLowerCase().includes("1080p")
-                      ? "1080p (Full HD)"
-                      : selectedVideoKey.toLowerCase().includes("720p")
-                      ? "720p (HD)"
-                      : selectedVideoKey.toLowerCase().includes("480p")
-                      ? "480p (SD)"
-                      : "1080p (Original)"}
+                    {detectedResolution ||
+                      (selectedVideoKey.toLowerCase().includes("1080p")
+                        ? "1080p (Full HD)"
+                        : selectedVideoKey.toLowerCase().includes("720p")
+                        ? "720p (HD)"
+                        : selectedVideoKey.toLowerCase().includes("480p")
+                        ? "480p (SD)"
+                        : selectedVideoKey.toLowerCase().includes("144p")
+                        ? "144p (Baixa)"
+                        : "Original")}
                   </span>
                 </div>
               </div>

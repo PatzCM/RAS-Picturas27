@@ -293,8 +293,8 @@ def main():
             publish_ws_progress(ch, correlation_id, progress=15.0, status="downloaded", project_id=project_id)
 
             # 2. Preparar caminhos para conversão FFmpeg
-            output_filename = f"converted_{int(time.time())}.{target_format}"
-            local_output = os.path.join(work_dir, output_filename)
+            temp_filename = f"temp_output.{target_format}"
+            local_temp_output = os.path.join(work_dir, temp_filename)
 
             # Callback de progresso do FFmpeg mapeado para 15% -> 85% do processo total
             def handle_ffmpeg_progress(data):
@@ -308,7 +308,7 @@ def main():
 
             input_data = {
                 "inputPath": local_input,
-                "outputPath": local_output,
+                "outputPath": local_temp_output,
                 "targetFormat": target_format,
                 "targetResolution": res_clean,
                 "timeoutMs": 15 * 60 * 1000  # Timeout de 15 minutos conforme requisito RNF
@@ -320,6 +320,14 @@ def main():
                 on_progress=handle_ffmpeg_progress,
                 is_cancelled=check_is_cancelled
             )
+
+            # Determinar a resolução final real a partir dos metadados extraídos pelo core
+            out_height = conversion_result.get("height")
+            res_tag = f"_{out_height}p" if out_height else ""
+            output_filename = f"converted_{int(time.time())}{res_tag}.{target_format}"
+            local_output = os.path.join(work_dir, output_filename)
+            os.rename(local_temp_output, local_output)
+            conversion_result["outputPath"] = local_output
 
             # 3. Upload do resultado para o SeaweedFS (S3)
             publish_ws_progress(ch, correlation_id, progress=88.0, status="uploading", project_id=project_id)
