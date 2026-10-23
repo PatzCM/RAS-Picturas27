@@ -220,6 +220,9 @@ router.post("/", function (req, res, next) {
 router.post("/:email/login", function (req, res, next) {
   User.getOneEmail(req.params.email)
     .then(async (user) => {
+      if (!user) {
+        return res.status(401).jsonp("The provided credentials are incorrect");
+      }
       const correct_pass = await auth.authenticate(req.body.password, user);
       if (correct_pass) {
         const userResponse = removeSensitiveInfo(user);
@@ -231,7 +234,10 @@ router.post("/:email/login", function (req, res, next) {
         });
       } else res.status(401).jsonp("The provided credentials are incorrect");
     })
-    .catch((_) => res.status(701).jsonp(`Error acquiring user's information.`));
+    .catch((err) => {
+      console.error("Error in login:", err);
+      res.status(701).jsonp(`Error acquiring user's information.`);
+    });
 });
 
 // Update user info

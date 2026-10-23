@@ -14,10 +14,37 @@ const mongoDB = "mongodb://users_mongoDB:27019/user";
 mongoose.connect(mongoDB, { useNewUrlParser: true, useUnifiedTopology: true });
 
 const db = mongoose.connection;
+const User = require("./controllers/user");
 
 db.on("error", console.error.bind(console, "Error connecting to Mongodb"));
-db.once("open", () => {
+db.once("open", async () => {
   console.log("Mongodb connection successful");
+  try {
+    const freeUser = await User.getOneEmail("teste");
+    if (!freeUser) {
+      await User.create({
+        name: "Teste Free",
+        email: "teste",
+        password: "Pass123!",
+        type: "free",
+        operations: [],
+      });
+      console.log("Seeded default test user: teste / Pass123!");
+    }
+    const premiumUser = await User.getOneEmail("testePremium");
+    if (!premiumUser) {
+      await User.create({
+        name: "Teste Premium",
+        email: "testePremium",
+        password: "Pass123!",
+        type: "premium",
+        operations: [],
+      });
+      console.log("Seeded default test user: testePremium / Pass123!");
+    }
+  } catch (seedErr) {
+    console.error("Error auto-seeding test users:", seedErr);
+  }
 });
 
 var app = express();
