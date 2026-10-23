@@ -988,7 +988,7 @@ router.get(
     axios
       .get(projectsURL + `${ownerId}/${req.params.project}/video/export`, {
         httpsAgent,
-        params: req.query.share ? { share: req.query.share } : undefined,
+        params: req.query,
         headers: {
           Authorization: req.headers["authorization"],
           "X-Caller-Id": callerId,
@@ -996,6 +996,32 @@ router.get(
       })
       .then((resp) => res.status(200).send(resp.data))
       .catch((err) => forwardAxiosError(res, err, "Error exporting video"));
+  }
+);
+
+/// registar conclusao de exportacao de video
+router.post(
+  "/:user/:project/video/export/complete",
+  auth.checkToken,
+  function (req, res, next) {
+    const ownerId = req.query.owner || req.params.user;
+    const callerId = req.authUserId || req.params.user;
+
+    axios
+      .post(
+        projectsURL + `${ownerId}/${req.params.project}/video/export/complete`,
+        req.body,
+        {
+          httpsAgent,
+          params: req.query,
+          headers: {
+            Authorization: req.headers["authorization"],
+            "X-Caller-Id": callerId,
+          },
+        }
+      )
+      .then((resp) => res.status(200).jsonp(resp.data))
+      .catch((err) => forwardAxiosError(res, err, "Error completing video export"));
   }
 );
 

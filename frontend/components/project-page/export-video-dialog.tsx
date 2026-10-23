@@ -126,16 +126,22 @@ export function ExportVideoDialog({ video, open, onOpenChange }: ExportVideoDial
     try {
       setDownloading(true);
 
-      // 1. Iniciar download no navegador (REQ-VID-EXP-011)
+      // 1. Iniciar download e obter dados do ficheiro (REQ-VID-EXP-011, A8)
+      const res = await fetch(videoData.url);
+      if (!res.ok) throw new Error("Falha ao transferir o ficheiro do servidor.");
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+
+      // 2. Disparar o download direto com o nome do ficheiro
       const a = document.createElement("a");
-      a.href = videoData.url;
+      a.href = blobUrl;
       a.download = videoData.name;
-      a.target = "_blank";
       document.body.appendChild(a);
       a.click();
       a.remove();
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
 
-      // 2. Registar conclusão e deduzir 1 operação da quota se for utilizador Registado (REQ-VID-EXP-014)
+      // 3. Registar conclusão e deduzir 1 operação da quota se for utilizador Registado (REQ-VID-EXP-014)
       await completeExport.mutateAsync();
 
       toast({
