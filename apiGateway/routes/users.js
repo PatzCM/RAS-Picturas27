@@ -94,7 +94,7 @@ router.post("/:email/login", function (req, res, next) {
     .post(usersURL + `${req.params.email}/login`, req.body, {
       httpsAgent: httpsAgent,
     })
-    .then((resp) => res.status(resp.status || 200).jsonp(resp.data))
+    .then((resp) => res.status(201).jsonp(resp.data))
     .catch((err) => {
       if (err.response) {
         return res.status(err.response.status).jsonp(err.response.data);
