@@ -144,6 +144,7 @@ services:
         condition: service_started
     ports:
       - "9002:9001"
+      - "9231:9231"
     restart: on-failure
     environment:
       RABBITMQ_HOST: rabbitmq
@@ -153,6 +154,8 @@ services:
     networks:
       - elk
     volumes:
+      - ./projects:/app
+      - /app/node_modules
       - image_data:/app/images
 
   users_mongoDB:

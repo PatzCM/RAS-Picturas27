@@ -1,6 +1,7 @@
 
 var express = require("express");
 var router = express.Router();
+const mongoose = require("mongoose");
 const axios = require("axios");
 const sharp = require("sharp");
 
@@ -2655,7 +2656,7 @@ function process_video_result_msg() {
         type: "video",
         file_name: keyName,
         img_key: keyName, 
-        img_id: correlationId,
+        img_id: process.img_id || new mongoose.Types.ObjectId(),
         project_id: projectId,
         user_id: ownerId,
         token: process.token || 0,
