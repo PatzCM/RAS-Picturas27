@@ -51,14 +51,32 @@ export function ImportVideoDialog() {
   );
 
   function validateAndSetFile(selectedFile: File) {
+    if (session.user?.type === "anonymous") {
+      toast({
+        title: "Acesso restrito",
+        description: "Utilizadores anónimos estão totalmente impedidos de realizar operações de vídeo. Por favor, crie uma conta.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (session.user?.type === "free" && selectedFile.size > 100 * 1024 * 1024) {
+      toast({
+        title: "Ficheiro excede limite do plano",
+        description: "O plano Registado/Gratuito está limitado a vídeos até 100 MB. Atualize para Premium para ficheiros maiores.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const ext = "." + selectedFile.name.split(".").pop()?.toLowerCase();
     const isAllowedExt = ALLOWED_EXTENSIONS.includes(ext);
     const isAllowedMime = ALLOWED_MIME_TYPES.includes(selectedFile.type);
 
     if (!isAllowedExt && !isAllowedMime) {
       toast({
-        title: "Unsupported format",
-        description: `Please select a valid video (${ALLOWED_EXTENSIONS.join(", ")}).`,
+        title: "Formato não suportado",
+        description: `Por favor selecione um vídeo válido (${ALLOWED_EXTENSIONS.join(", ")}).`,
         variant: "destructive",
       });
       return;
@@ -122,13 +140,13 @@ export function ImportVideoDialog() {
         },
         onError: (err: any) => {
           console.error("Error importing video:", err);
+          const errData = err.response?.data;
           const errorMsg =
-            err.response?.data?.message ||
-            err.response?.data ||
+            (typeof errData === "string" ? errData : errData?.message || errData?.error) ||
             err.message ||
-            "Failed to import video.";
+            "Não foi possível importar este vídeo.";
           toast({
-            title: "Error importing video",
+            title: "Erro ao importar vídeo",
             description: String(errorMsg),
             variant: "destructive",
           });

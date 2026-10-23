@@ -1,0 +1,262 @@
+{
+	"info": {
+		"_postman_id": "c9e5271c-4881-484b-90d8-b9653557cac7",
+		"name": "PictuRAS - Fase 1 Vídeo MVP (Testes API)",
+		"description": "Coleção de testes de integração e validação ponta-a-ponta para o módulo de vídeo do PictuRAS (Fase 1: Conversão, Importação e Exportação).",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:8080",
+			"type": "string"
+		},
+		{
+			"key": "accessToken",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "uploadUrl",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "bucketName",
+			"value": "user",
+			"type": "string"
+		},
+		{
+			"key": "objectKey",
+			"value": "project/src/amostra_valida_1080p.mp4",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "1. Autenticação (POST /auth/login)",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Status code is 200\", function () {",
+							"    pm.response.to.have.status(200);",
+							"});",
+							"var jsonData = pm.response.json();",
+							"if (jsonData.token || jsonData.jwt) {",
+							"    pm.collectionVariables.set(\"accessToken\", jsonData.token || jsonData.jwt);",
+							"}"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"email\": \"teste\",\n    \"password\": \"Pass123!\"\n}"
+				},
+				"url": {
+					"raw": "{{baseUrl}}/auth/login",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"auth",
+						"login"
+					]
+				}
+			}
+		},
+		{
+			"name": "2. Obter Presigned PUT URL (POST /storage/presigned-url)",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Status code is 200\", function () {",
+							"    pm.response.to.have.status(200);",
+							"});",
+							"var jsonData = pm.response.json();",
+							"pm.collectionVariables.set(\"uploadUrl\", jsonData.url);",
+							"pm.collectionVariables.set(\"bucketName\", jsonData.bucket);",
+							"pm.collectionVariables.set(\"objectKey\", jsonData.key);"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{accessToken}}"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"fileName\": \"amostra_valida_1080p.mp4\",\n    \"contentType\": \"video/mp4\",\n    \"stage\": \"src\"\n}"
+				},
+				"url": {
+					"raw": "{{baseUrl}}/storage/presigned-url",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"storage",
+						"presigned-url"
+					]
+				}
+			}
+		},
+		{
+			"name": "3. Registar Importação de Vídeo (POST /user/project/video/import)",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Status code is 201 Created\", function () {",
+							"    pm.response.to.have.status(201);",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{accessToken}}"
+					},
+					{
+						"key": "X-Project-Version",
+						"value": "1"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"fileName\": \"amostra_valida_1080p.mp4\",\n    \"bucket\": \"{{bucketName}}\",\n    \"objectKey\": \"{{objectKey}}\",\n    \"fileHash\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"\n}"
+				},
+				"url": {
+					"raw": "{{baseUrl}}/user/project/video/import",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"user",
+						"project",
+						"video",
+						"import"
+					]
+				}
+			}
+		},
+		{
+			"name": "4. Solicitar Conversão de Vídeo (POST /user/project/video/convert)",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Status code is 202 Accepted\", function () {",
+							"    pm.response.to.have.status(202);",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{accessToken}}"
+					},
+					{
+						"key": "X-Project-Version",
+						"value": "2"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"bucket\": \"{{bucketName}}\",\n    \"inputKey\": \"{{objectKey}}\",\n    \"targetFormat\": \"webm\",\n    \"targetResolution\": \"720p\"\n}"
+				},
+				"url": {
+					"raw": "{{baseUrl}}/user/project/video/convert",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"user",
+						"project",
+						"video",
+						"convert"
+					]
+				}
+			}
+		},
+		{
+			"name": "5. Obter URLs de Exportação (GET /user/project/video/export)",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Status code is 200\", function () {",
+							"    pm.response.to.have.status(200);",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{accessToken}}"
+					}
+				],
+				"url": {
+					"raw": "{{baseUrl}}/user/project/video/export",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"user",
+						"project",
+						"video",
+						"export"
+					]
+				}
+			}
+		}
+	]
+}

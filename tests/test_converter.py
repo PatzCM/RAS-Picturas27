@@ -1,7 +1,7 @@
 import os
 import shutil
 import pytest
-from Tools.video_convert.core.converter import convert_video
+from Tools.video_convert.core.converter import convert_video, validate_input_video, get_video_metadata
 
 # Paths for the tests
 FIXTURE_PATH = "tests/fixtures/fixture.mp4"
@@ -94,3 +94,48 @@ def test_convert_video_timeout(video_environment):
 
     # Verify the error message
     assert "timeout" in str(exception_info.value).lower()
+
+
+def test_tst_unit_01_convert_video_mp4_to_webm(video_environment):
+    """
+    TST-UNIT-01: Dado um vídeo local válido (.mp4), quando convert_video é chamada para formato webm,
+    então o ficheiro de output é gerado com sucesso e os metadados são validados via ffprobe.
+    """
+    webm_output = "/tmp/test_output_converted.webm"
+    if os.path.exists(webm_output):
+        os.remove(webm_output)
+
+    try:
+        input_data = {
+            'inputPath': TMP_INPUT,
+            'outputPath': webm_output,
+            'targetFormat': 'webm',
+            'targetResolution': '480p'
+        }
+        res = convert_video(input_data)
+        assert os.path.exists(webm_output)
+        assert res['format'] == 'webm'
+        assert res['height'] == 480
+        meta = get_video_metadata(webm_output)
+        assert meta['videoCodec'] in ['vp9', 'vp8']
+    finally:
+        if os.path.exists(webm_output):
+            os.remove(webm_output)
+
+
+def test_tst_unit_02_validate_input_video_non_video():
+    """
+    TST-UNIT-02: Dado um ficheiro de texto não-vídeo, quando validate_input_video é chamada,
+    então o ffprobe falha e o sistema levanta uma exceção estruturada (ValueError).
+    """
+    fake_text_path = "/tmp/fake_video_file.txt"
+    with open(fake_text_path, "w") as f:
+        f.write("Isto é um ficheiro de texto comum e não um stream de vídeo.")
+
+    try:
+        with pytest.raises(ValueError) as exc_info:
+            validate_input_video(fake_text_path)
+        assert "invalid video file" in str(exc_info.value).lower() or "ffprobe failed" in str(exc_info.value).lower()
+    finally:
+        if os.path.exists(fake_text_path):
+            os.remove(fake_text_path)

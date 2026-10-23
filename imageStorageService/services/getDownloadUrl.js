@@ -20,8 +20,9 @@ async function getDownloadUrl(userId, projectId, stage, fileName) {
   });
 
   const internal = `http://${process.env.S3_ENDPOINT || "seaweedfs:9000"}`;
+  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:8080";
   return {
-    url: url.replace(internal, process.env.FRONTEND_URL + "/s3"),
+    url: url.replace(internal, frontendUrl + "/s3"),
     expiresInMinutes: EXPORT_LINK_MINUTES,
     size: info.ContentLength,
     contentType: info.ContentType,

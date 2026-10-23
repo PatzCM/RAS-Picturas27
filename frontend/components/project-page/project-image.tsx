@@ -4,6 +4,7 @@ import { Download, Trash, Video, Play, Film } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import VideoConvertTool from "../toolbar/video-convert-tool";
+import { ExportVideoDialog } from "./export-video-dialog";
 import {
   Dialog,
   DialogTrigger,
@@ -43,6 +44,7 @@ export function ProjectImage({ image, animation = true }: ImageItemProps) {
   const [loaded, setLoaded] = useState<boolean>(false);
   const [open, setOpen] = useState<boolean>(false);
   const [convertDialogOpen, setConvertDialogOpen] = useState<boolean>(false);
+  const [exportDialogOpen, setExportDialogOpen] = useState<boolean>(false);
 
   const { _id: pid, version } = useProjectInfo();
   const session = useSession();
@@ -163,36 +165,49 @@ export function ProjectImage({ image, animation = true }: ImageItemProps) {
               </ContextMenuItem>
             )}
           </DialogTrigger>
-          <ContextMenuItem
-            className="flex justify-between"
-            onClick={(e) => {
-              e.stopPropagation();
-              downloadImage.mutate(
-                {
-                  imageUrl: image.url,
-                  imageName: image.name,
-                },
-                {
-                  onSuccess: () => {
-                    toast({
-                      title: `Image ${image.name} downloaded.`,
-                    });
+          {isVideo ? (
+            <ContextMenuItem
+              className="flex justify-between cursor-pointer"
+              onClick={(e) => {
+                e.stopPropagation();
+                setExportDialogOpen(true);
+              }}
+            >
+              <span>Exportar Vídeo</span>
+              <Download className="size-4 text-emerald-500" />
+            </ContextMenuItem>
+          ) : (
+            <ContextMenuItem
+              className="flex justify-between"
+              onClick={(e) => {
+                e.stopPropagation();
+                downloadImage.mutate(
+                  {
+                    imageUrl: image.url,
+                    imageName: image.name,
                   },
-                  onError: (error) => {
-                    const { title, description } = getErrorMessage("project-download", error);
-                    toast({
-                      title,
-                      description,
-                      variant: "destructive",
-                    });
+                  {
+                    onSuccess: () => {
+                      toast({
+                        title: `Image ${image.name} downloaded.`,
+                      });
+                    },
+                    onError: (error) => {
+                      const { title, description } = getErrorMessage("project-download", error);
+                      toast({
+                        title,
+                        description,
+                        variant: "destructive",
+                      });
+                    },
                   },
-                },
-              );
-            }}
-          >
-            <span>Download</span>
-            <Download className="size-4" />
-          </ContextMenuItem>
+                );
+              }}
+            >
+              <span>Download</span>
+              <Download className="size-4" />
+            </ContextMenuItem>
+          )}
         </ContextMenuContent>
       </ContextMenu>
       <DialogContent>
@@ -246,12 +261,19 @@ export function ProjectImage({ image, animation = true }: ImageItemProps) {
     </Dialog>
 
     {isVideo && (
-      <VideoConvertTool
-        targetVideoId={image._id}
-        open={convertDialogOpen}
-        onOpenChange={setConvertDialogOpen}
-        trigger={null}
-      />
+      <>
+        <VideoConvertTool
+          targetVideoId={image._id}
+          open={convertDialogOpen}
+          onOpenChange={setConvertDialogOpen}
+          trigger={null}
+        />
+        <ExportVideoDialog
+          video={image}
+          open={exportDialogOpen}
+          onOpenChange={setExportDialogOpen}
+        />
+      </>
     )}
     </>
   );

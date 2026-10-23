@@ -20,7 +20,7 @@ router.get("/:userId/:projectId/:stage/:fileName", async (req, res) => {
   const extension = fileName.split(".").pop();
   if (!videoExtensions.includes(extension)) {
     return res.status(400).json({
-      error: "Só é possível exportar vídeos (MP4, WebM ou MOV).",
+      error: "Só é possível exportar vídeos (MP4, WebM, MKV ou MOV).",
     });
   }
 

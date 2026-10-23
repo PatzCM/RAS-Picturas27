@@ -55,21 +55,34 @@ def get_video_metadata(file_path: str) -> dict:
         raise ValueError(f"ffprobe failed. Invalid video file: {e.stderr}")
 
 
+def validate_input_video(file_path: str) -> dict:
+    """
+    TST-UNIT-02: Valida a integridade do ficheiro de vídeo de entrada via ffprobe.
+    Levanta ValueError caso o ficheiro não seja um vídeo válido ou esteja corrompido.
+    """
+    return get_video_metadata(file_path)
+
+
 def get_ffmpeg_args(target_format: str, target_resolution: str) -> list:
     """
-    Task J-03: MVP Matrix for resolution and formats.
+    Task J-03 & RNG-04: MVP Matrix for resolution and formats (MP4, WebM, MKV, MOV).
     """
     args = []
 
-    if target_format == "mp4":
-        args.extend(["-c:v", "libx264", "-c:a", "aac"])
-    elif target_format == "webm":
+    fmt = (target_format or "mp4").lower()
+    if fmt == "mp4":
+        args.extend(["-c:v", "libx264", "-c:a", "aac", "-pix_fmt", "yuv420p"])
+    elif fmt == "webm":
         args.extend(["-c:v", "libvpx-vp9", "-c:a", "libvorbis"])
+    elif fmt == "mkv":
+        args.extend(["-c:v", "libx264", "-c:a", "aac"])
+    elif fmt == "mov":
+        args.extend(["-c:v", "libx264", "-c:a", "aac", "-pix_fmt", "yuv420p"])
     else:
-        pass 
+        args.extend(["-c:v", "libx264", "-c:a", "aac"])
 
-    if target_resolution:
-        height = target_resolution.replace("p", "") 
+    if target_resolution and str(target_resolution).strip().lower() not in ("original", "none", ""):
+        height = str(target_resolution).replace("p", "").strip()
         args.extend(["-vf", f"scale=-2:{height}"])
 
     return args

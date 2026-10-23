@@ -4,6 +4,9 @@ import {
   addProjectImages,
   importProjectVideo,
   convertProjectVideo,
+  cancelProjectVideoConvert,
+  exportProjectVideo,
+  completeProjectVideoExport,
   addProjectTool,
   deleteProject,
   deleteProjectImages,
@@ -226,6 +229,79 @@ export const useConvertProjectVideo = (
         queryKey: ["projectResults", uid, pid, token, ownerId, shareId],
         refetchType: "all",
       });
+    },
+  });
+};
+
+export const useCancelProjectVideoConvert = (
+  uid: string,
+  pid: string,
+  token: string,
+  ownerId?: string,
+  shareId?: string,
+) => {
+  const qc = useQueryClient();
+  const projectKey = ["project", uid, pid, token, ownerId, shareId];
+
+  return useMutation({
+    mutationFn: (args: { jobId: string }) =>
+      cancelProjectVideoConvert({
+        uid,
+        pid,
+        token,
+        jobId: args.jobId,
+        ownerId,
+        shareId,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: projectKey, refetchType: "all" });
+      qc.invalidateQueries({
+        queryKey: ["projectResults", uid, pid, token, ownerId, shareId],
+        refetchType: "all",
+      });
+    },
+  });
+};
+
+export const useExportProjectVideo = (
+  uid: string,
+  pid: string,
+  token: string,
+  ownerId?: string,
+  shareId?: string,
+) => {
+  return useMutation({
+    mutationFn: (args: { videoKey?: string }) =>
+      exportProjectVideo({
+        uid,
+        pid,
+        token,
+        videoKey: args.videoKey,
+        ownerId,
+        shareId,
+      }),
+  });
+};
+
+export const useCompleteProjectVideoExport = (
+  uid: string,
+  pid: string,
+  token: string,
+  ownerId?: string,
+  shareId?: string,
+) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      completeProjectVideoExport({
+        uid,
+        pid,
+        token,
+        ownerId,
+        shareId,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["user", uid] });
     },
   });
 };

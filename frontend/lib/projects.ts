@@ -605,6 +605,99 @@ export const convertProjectVideo = async ({
   return response.data;
 };
 
+export const cancelProjectVideoConvert = async ({
+  uid,
+  pid,
+  token,
+  jobId,
+  ownerId,
+  shareId,
+}: {
+  uid: string;
+  pid: string;
+  token: string;
+  jobId: string;
+  ownerId?: string;
+  shareId?: string;
+}) => {
+  const pathUid = shareId ? (ownerId ?? uid) : uid;
+  const query = buildQuery({ ownerId, shareId });
+
+  const response = await api.post(
+    `/projects/${pathUid}/${pid}/video/convert/cancel${query}`,
+    { jobId, correlationId: jobId },
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    }
+  );
+
+  return response.data;
+};
+
+export const exportProjectVideo = async ({
+  uid,
+  pid,
+  token,
+  videoKey,
+  ownerId,
+  shareId,
+}: {
+  uid: string;
+  pid: string;
+  token: string;
+  videoKey?: string;
+  ownerId?: string;
+  shareId?: string;
+}) => {
+  const pathUid = shareId ? (ownerId ?? uid) : uid;
+  const query = buildQuery({ ownerId, shareId });
+  const separator = query ? "&" : "?";
+  const videoParam = videoKey ? `${separator}videoKey=${encodeURIComponent(videoKey)}` : "";
+
+  const response = await api.get(
+    `/projects/${pathUid}/${pid}/video/export${query}${videoParam}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    }
+  );
+
+  return response.data;
+};
+
+export const completeProjectVideoExport = async ({
+  uid,
+  pid,
+  token,
+  ownerId,
+  shareId,
+}: {
+  uid: string;
+  pid: string;
+  token: string;
+  ownerId?: string;
+  shareId?: string;
+}) => {
+  const pathUid = shareId ? (ownerId ?? uid) : uid;
+  const query = buildQuery({ ownerId, shareId });
+
+  const response = await api.post(
+    `/projects/${pathUid}/${pid}/video/export/complete${query}`,
+    {},
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    }
+  );
+
+  return response.data;
+};
+
 export const deleteProjectImages = async ({
   uid,
   pid,

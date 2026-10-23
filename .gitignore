@@ -24,3 +24,6 @@ venv
 *GUIA*
 *ADHD*
 *CheatSheet*
+
+# Ficheiros de teste pesados (> 100MB) para respeitar limites do GitHub
+test-assets/amostra_invalida_excesso.mp4

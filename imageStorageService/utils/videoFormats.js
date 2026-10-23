@@ -2,6 +2,7 @@
 const videoFormats = {
   "video/mp4": "mp4",
   "video/webm": "webm",
+  "video/x-matroska": "mkv",
   "video/quicktime": "mov",
 };
 

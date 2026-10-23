@@ -951,6 +951,32 @@ router.post(
   }
 );
 
+// cancelar conversão de vídeo
+router.post(
+  "/:user/:project/video/convert/cancel",
+  auth.checkToken,
+  function (req, res, next) {
+    const ownerId = req.query.owner || req.params.user;
+    const callerId = req.authUserId || req.params.user;
+
+    axios
+      .post(
+        projectsURL + `${ownerId}/${req.params.project}/video/convert/cancel`,
+        req.body,
+        {
+          httpsAgent,
+          params: req.query.share ? { share: req.query.share } : undefined,
+          headers: {
+            Authorization: req.headers["authorization"],
+            "X-Caller-Id": callerId,
+          },
+        }
+      )
+      .then((resp) => res.status(200).jsonp(resp.data))
+      .catch((err) => forwardAxiosError(res, err, "Error cancelling video conversion"));
+  }
+);
+
 /// exportar video
 router.get(
   "/:user/:project/video/export",

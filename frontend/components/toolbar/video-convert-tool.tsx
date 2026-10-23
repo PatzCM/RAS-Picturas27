@@ -20,10 +20,10 @@ import {
 } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Progress } from "@/components/ui/progress";
-import { Film, LoaderCircle, CheckCircle2, Video, Sparkles } from "lucide-react";
+import { Film, LoaderCircle, CheckCircle2, Video, Sparkles, X, AlertCircle } from "lucide-react";
 import { useProjectInfo } from "@/providers/project-provider";
 import { useSession } from "@/providers/session-provider";
-import { useConvertProjectVideo } from "@/lib/mutations/projects";
+import { useConvertProjectVideo, useCancelProjectVideoConvert } from "@/lib/mutations/projects";
 import { useGetSocket } from "@/lib/queries/projects";
 import { useToast } from "@/hooks/use-toast";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -73,6 +73,7 @@ export default function VideoConvertTool({
   const [isConverting, setIsConverting] = useState(false);
   const [progress, setProgress] = useState<number>(0);
   const [progressStatus, setProgressStatus] = useState<string>("");
+  const [currentJobId, setCurrentJobId] = useState<string>("");
 
   const project = useProjectInfo();
   const session = useSession();
@@ -91,6 +92,27 @@ export default function VideoConvertTool({
     ownerParam,
     shareId
   );
+
+  const cancelConvert = useCancelProjectVideoConvert(
+    session.user._id,
+    project._id,
+    session.token,
+    ownerParam,
+    shareId
+  );
+
+  const handleCancelConversion = () => {
+    if (currentJobId) {
+      cancelConvert.mutate({ jobId: currentJobId });
+    }
+    setIsConverting(false);
+    setProgress(0);
+    setProgressStatus("");
+    toast({
+      title: "Conversão cancelada",
+      description: "A operação de conversão foi interrompida.",
+    });
+  };
 
   const isVideoItem = (img: { name: string; mediaType?: string }) => {
     const ext = "." + img.name.split(".").pop()?.toLowerCase();
@@ -157,7 +179,10 @@ export default function VideoConvertTool({
         projectVersion: project.version,
       },
       {
-        onSuccess: () => {
+        onSuccess: (data: any) => {
+          if (data?.jobId) {
+            setCurrentJobId(data.jobId);
+          }
           setProgress(100);
           setProgressStatus("Conversion finished!");
           toast({
@@ -176,13 +201,15 @@ export default function VideoConvertTool({
         onError: (err: any) => {
           console.error("Video conversion error:", err);
           setIsConverting(false);
+          const errData = err.response?.data;
+          const msg =
+            (typeof errData === "string" ? errData : errData?.message || errData?.error) ||
+            err.message ||
+            "Não foi possível converter vídeo. Tente novamente.";
+          
           toast({
-            title: "Error starting video conversion",
-            description:
-              err.response?.data?.message ||
-              err.response?.data ||
-              err.message ||
-              "Could not start conversion.",
+            title: "Erro na conversão de vídeo",
+            description: msg,
             variant: "destructive",
           });
         },
@@ -256,6 +283,30 @@ export default function VideoConvertTool({
               </Select>
             </div>
 
+            {/* Apresentação do Formato e Resolução Atual (REQ-VID-FORMAT-001, REQ-VID-RES-001) */}
+            {selectedVideoKey && (
+              <div className="grid grid-cols-2 gap-2 p-2.5 rounded-md border bg-muted/30 text-xs">
+                <div>
+                  <span className="text-muted-foreground block text-[11px]">Formato Atual:</span>
+                  <span className="font-semibold uppercase">
+                    {selectedVideoKey.split(".").pop()?.toUpperCase() || "MP4"}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block text-[11px]">Resolução Atual:</span>
+                  <span className="font-semibold">
+                    {selectedVideoKey.toLowerCase().includes("1080p")
+                      ? "1080p (Full HD)"
+                      : selectedVideoKey.toLowerCase().includes("720p")
+                      ? "720p (HD)"
+                      : selectedVideoKey.toLowerCase().includes("480p")
+                      ? "480p (SD)"
+                      : "1080p (Original)"}
+                  </span>
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
@@ -322,31 +373,34 @@ export default function VideoConvertTool({
         )}
 
         <DialogFooter className="flex gap-2 justify-end">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => setOpen(false)}
-            disabled={isConverting}
-          >
-            Cancel
-          </Button>
-          {projectVideos.length > 0 && (
+          {isConverting ? (
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleCancelConversion}
+              className="inline-flex items-center gap-1.5"
+            >
+              <X className="size-4" />
+              <span>Cancelar Conversão</span>
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setOpen(false)}
+            >
+              Cancel
+            </Button>
+          )}
+
+          {projectVideos.length > 0 && !isConverting && (
             <Button
               onClick={handleConvert}
-              disabled={isConverting || !selectedVideoKey}
+              disabled={!selectedVideoKey}
               className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white"
             >
-              {isConverting ? (
-                <>
-                  <LoaderCircle className="size-4 animate-spin" />
-                  <span>Converting...</span>
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="size-4" />
-                  <span>Convert Video</span>
-                </>
-              )}
+              <CheckCircle2 className="size-4" />
+              <span>Convert Video</span>
             </Button>
           )}
         </DialogFooter>
