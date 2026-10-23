@@ -40,7 +40,7 @@ function bumpProjectVersion(
   const v = Number(newVersionHeader);
   if (!Number.isFinite(v)) return;
 
-  qc.setQueryData(queryKey, (old: any) => {
+  qc.setQueriesData({ queryKey: ["project"] }, (old: any) => {
     if (!old) return old;
     return { ...old, version: v };
   });
@@ -148,8 +148,9 @@ export const useAddProjectImages = (uid: string, pid: string, token: string, own
 
     onSuccess: (newVersionHeader) => {
       bumpProjectVersion(qc, projectKey, newVersionHeader);
-      qc.invalidateQueries({ queryKey: projectKey, refetchType: "all" });
-      qc.invalidateQueries({ queryKey: ["projectImages", uid, pid, token, ownerId, shareId], refetchType: "all" });
+      qc.invalidateQueries({ queryKey: ["project"], refetchType: "all" });
+      qc.invalidateQueries({ queryKey: ["projectImages"], refetchType: "all" });
+      qc.invalidateQueries({ queryKey: ["projects"], refetchType: "all" });
     },
   });
 };
@@ -185,11 +186,9 @@ export const useImportProjectVideo = (
       if (data?.version) {
         bumpProjectVersion(qc, projectKey, String(data.version));
       }
-      qc.invalidateQueries({ queryKey: projectKey, refetchType: "all" });
-      qc.invalidateQueries({
-        queryKey: ["projectImages", uid, pid, token, ownerId, shareId],
-        refetchType: "all",
-      });
+      qc.invalidateQueries({ queryKey: ["project"], refetchType: "all" });
+      qc.invalidateQueries({ queryKey: ["projectImages"], refetchType: "all" });
+      qc.invalidateQueries({ queryKey: ["projects"], refetchType: "all" });
     },
   });
 };
@@ -330,11 +329,8 @@ export const useDeleteProjectImages = (
 
     onSuccess: (newVersionHeader) => {
       bumpProjectVersion(qc, projectKey, newVersionHeader);
-      qc.invalidateQueries({ queryKey: projectKey, refetchType: "all" });
-      qc.invalidateQueries({
-        queryKey: ["projectImages", uid, pid, token, ownerId, shareId],
-        refetchType: "all",
-      });
+      qc.invalidateQueries({ queryKey: ["project"], refetchType: "all" });
+      qc.invalidateQueries({ queryKey: ["projectImages"], refetchType: "all" });
     },
   });
 };

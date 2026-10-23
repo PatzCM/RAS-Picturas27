@@ -177,6 +177,7 @@ services:
       - users_mongoDB
     ports:
       - "10001:10001"
+      - "9229:9229"
     restart: on-failure
     environment:
       - FREE_DAILY_OP=5
@@ -222,6 +223,9 @@ services:
     depends_on:
       - projects
       - users
+    ports:
+      - "8000:8000"
+      - "9230:9230"
     restart: on-failure
     environment:
       - JWT_SECRET_KEY=lisan_al_gaib

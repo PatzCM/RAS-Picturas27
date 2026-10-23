@@ -18,6 +18,7 @@ import { useProjectInfo } from "@/providers/project-provider";
 import { useSession } from "@/providers/session-provider";
 import { useToast } from "@/hooks/use-toast";
 import { useSearchParams } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 
 const ALLOWED_EXTENSIONS = [".mp4", ".webm", ".mkv", ".mov"];
 const ALLOWED_MIME_TYPES = [
@@ -38,6 +39,7 @@ export function ImportVideoDialog() {
   const searchParams = useSearchParams();
   const { _id: pid, version } = useProjectInfo();
   const session = useSession();
+  const qc = useQueryClient();
 
   const ownerId = searchParams.get("owner") ?? undefined;
   const shareId = searchParams.get("share") ?? undefined;
@@ -137,6 +139,8 @@ export function ImportVideoDialog() {
           });
           resetState();
           setOpen(false);
+          qc.invalidateQueries({ queryKey: ["project"], refetchType: "all" });
+          qc.invalidateQueries({ queryKey: ["projectImages"], refetchType: "all" });
         },
         onError: (err: any) => {
           console.error("Error importing video:", err);

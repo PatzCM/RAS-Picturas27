@@ -110,12 +110,8 @@ export function AddMediaDialog() {
       setFiles([]);
       setOpen(false);
 
-      const projectKey = ["project", session.user._id, pid, session.token, ownerId, shareId];
-      qc.invalidateQueries({ queryKey: projectKey, refetchType: "all" });
-      qc.invalidateQueries({
-        queryKey: ["projectImages", session.user._id, pid, session.token, ownerId, shareId],
-        refetchType: "all",
-      });
+      qc.invalidateQueries({ queryKey: ["project"], refetchType: "all" });
+      qc.invalidateQueries({ queryKey: ["projectImages"], refetchType: "all" });
     } catch (err: any) {
       console.error("Upload media error:", err);
       toast({
