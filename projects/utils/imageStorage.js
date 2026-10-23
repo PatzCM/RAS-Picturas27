@@ -47,4 +47,17 @@ async function copy_image(userId, projectId, fromStage, toStage, fileName) {
   );
 }
 
-module.exports = { get_image_internal_url, get_image_public_url, post_image, delete_image, copy_image };
+async function get_upload_presigned_url(user, project, stage, fileName, contentType) {
+  return await axios.get(
+    `${img_storage_ms}/upload/presigned/public/${user}/${project}/${stage}/${fileName}`,
+    { params: { contentType } }
+  );
+}
+
+async function get_download_presigned_url(user, project, stage, fileName) {
+  return await axios.get(
+    `${img_storage_ms}/download/${user}/${project}/${stage}/${fileName}`
+  );
+}
+
+module.exports = { get_image_internal_url, get_image_public_url, post_image, delete_image, copy_image, get_upload_presigned_url, get_download_presigned_url };

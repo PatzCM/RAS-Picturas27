@@ -41,6 +41,14 @@ module.exports.delete = (user_id, project_id, process_id) => {
   });
 };
 
+module.exports.deleteByMsgId = (user_id, project_id, msg_id) => {
+  return Process.deleteMany({
+    user_id: user_id,
+    project_id: project_id,
+    msg_id: msg_id,
+  });
+};
+
 module.exports.countByProjectAndToken = async (project_id, token) => {
   return await Process.countDocuments({ project_id, token }).exec();
 };

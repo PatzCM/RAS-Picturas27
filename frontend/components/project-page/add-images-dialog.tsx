@@ -19,12 +19,14 @@ import { useProjectInfo } from "@/providers/project-provider";
 import { useSession } from "@/providers/session-provider";
 import { useToast } from "@/hooks/use-toast";
 import { getErrorMessage } from "@/lib/error-messages";
+import { useQueryClient } from "@tanstack/react-query";
 
 export function AddImagesDialog() {
   const [open, setOpen] = useState(false);
   const [images, setImages] = useState<string[]>([]);
   const [imageFiles, setImageFiles] = useState<File[]>([]);
   const { toast } = useToast();
+  const qc = useQueryClient();
 
   const { _id: pid, version} = useProjectInfo();
   const session = useSession();
@@ -55,6 +57,8 @@ export function AddImagesDialog() {
             title: "Images added successfully.",
           });
           setOpen(false);
+          qc.invalidateQueries({ queryKey: ["project"], refetchType: "all" });
+          qc.invalidateQueries({ queryKey: ["projectImages"], refetchType: "all" });
         },
         onError: (error) => {
           const { title, description } = getErrorMessage("project-upload", error);
@@ -83,10 +87,18 @@ export function AddImagesDialog() {
           </DialogDescription>
         </DialogHeader>
         <ImageSubmissionArea onDrop={onDrop} />
-        <DialogFooter>
+        <DialogFooter className="flex gap-2 justify-end">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setOpen(false)}
+            disabled={addImages.isPending}
+          >
+            Cancel
+          </Button>
           <Button
             onClick={handleAdd}
-            disabled={images.length === 0}
+            disabled={images.length === 0 || addImages.isPending}
             className="inline-flex items-center gap-1"
           >
             <span>Add</span>

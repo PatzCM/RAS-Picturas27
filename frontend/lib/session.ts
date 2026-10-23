@@ -41,7 +41,7 @@ export const login = async ({
     },
   );
 
-  if (response.status !== 201 || !response.data)
+  if (![200, 201].includes(response.status) || !response.data)
     throw new Error("Invalid credentials");
 
   const session: SessionData = {

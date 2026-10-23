@@ -226,6 +226,11 @@ export function AiAssistantDialog(props: {
             )}
           </div>
         )}
+        <div className="flex justify-end pt-2">
+          <Button variant="outline" onClick={() => setOpen(false)}>
+            Fechar
+          </Button>
+        </div>
       </DialogContent>
     </Dialog>
   );

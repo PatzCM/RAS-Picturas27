@@ -1,6 +1,7 @@
 
 var express = require("express");
 var router = express.Router();
+const mongoose = require("mongoose");
 const axios = require("axios");
 const sharp = require("sharp");
 
@@ -23,7 +24,10 @@ const {
   send_msg_client_preview,
   send_msg_client_preview_error,
   read_msg,
-  send_msg_project_op,   
+  send_msg_project_op,
+  send_msg_video_convert_cancel,
+  read_video_result_msg,
+  send_msg_video_convert,
 } = require("../utils/project_msg");
 
 const Project = require("../controllers/project");
@@ -78,6 +82,9 @@ const advanced_tools = [
   "people_ai",
   "expand_ai",
 ];
+
+const allowedVideoFormats = ["original", "mp4", "webm", "mkv", "mov"];
+const allowedResolutions = ["original", "144p", "480p", "720p", "1080p"];
 
 // Conta quantas ferramentas avançadas existem neste projeto (independente de imagens)
 function count_advanced_tools(project) {
@@ -832,6 +839,7 @@ router.get("/:user/:project", checkSharePermission, async (req, res, next) => {
             _id: img._id,
             name: path.basename(img.og_uri),
             url: url,
+            mediaType: img.mediaType || "image",
           });
         } catch (_) {
           res.status(404).jsonp(`Error acquiring image's url`);
@@ -889,6 +897,7 @@ router.get("/:user/:project/imgs", checkSharePermission, async (req, res, next) 
               _id: img._id,
               name: path.basename(img.og_uri),
               url: url,
+              mediaType: img.mediaType || "image",
             });
           } catch (_) {
             res.status(404).jsonp(`Error acquiring image's url`);
@@ -2563,4 +2572,566 @@ router.post(
   }
 );
 
-module.exports = { router, process_msg };
+// Validar acesso do utilizador às operações de vídeo e verificar se é anónimo (RNG-01, REQ-VID-SEC-001)
+async function checkUserVideoAccess(callerId) {
+  if (!callerId) {
+    return { allowed: false, error: "Autenticação necessária para operações de vídeo.", status: 401 };
+  }
+  try {
+    const resp = await axios.get(`${users_ms}${callerId}`, { httpsAgent });
+    const user = resp.data;
+    if (!user || user.type === "anonymous") {
+      return {
+        allowed: false,
+        error: "Utilizadores anónimos estão totalmente impedidos de realizar qualquer operação de vídeo. Por favor, crie uma conta.",
+        status: 403,
+        userType: "anonymous",
+      };
+    }
+    return {
+      allowed: true,
+      userType: user.type,
+      remainingOperations: user.remaining_operations,
+    };
+  } catch (e) {
+    console.error("[checkUserVideoAccess] erro ao consultar users-ms:", e.message);
+    try {
+      const typeResp = await axios.get(`${users_ms}${callerId}/type`, { httpsAgent });
+      if (typeResp.data?.type === "anonymous") {
+        return {
+          allowed: false,
+          error: "Utilizadores anónimos estão totalmente impedidos de realizar qualquer operação de vídeo. Por favor, crie uma conta.",
+          status: 403,
+          userType: "anonymous",
+        };
+      }
+      return { allowed: true, userType: typeResp.data?.type || "free", remainingOperations: null };
+    } catch (_) {
+      return { allowed: false, error: "Erro ao validar permissões e plano de subscrição.", status: 500 };
+    }
+  }
+}
+
+// ouvinte de resultados do worker
+function process_video_result_msg() {
+  read_video_result_msg(async (msg) => {
+    try {
+      const msg_content = JSON.parse(msg.content.toString());
+      const correlationId = msg_content.correlationId;
+      const status = msg_content.status;
+
+      const process = await Process.getOneByMsgId(correlationId);
+      if (!process) return;
+
+      const ownerId = process.user_id;
+      const projectId = process.project_id;
+      const runnerId = process.runner_id || ownerId;
+      const timestamp = new Date().toISOString();
+      const ws_msg_id = `video-ws-${uuidv4()}`;
+
+      await Process.delete(ownerId, projectId, process._id);
+
+      if (status === "error" || status === "failed") {
+        const errorMsg = msg_content.error || "Não foi possível converter vídeo. Tente novamente.";
+        send_msg_client_error(ws_msg_id, timestamp, runnerId, "VIDEO_ERR", errorMsg);
+
+        // Estorno da quota diária em caso de falha (RNG-02, REQ-VID-QUOTA-001)
+        try {
+          await axios.post(`${users_ms}${runnerId}/process/refund/1`, {}, { httpsAgent });
+        } catch (_) {}
+        return;
+      }
+
+      const outputKey = msg_content.output?.key || msg_content.result?.key || msg_content.outputKey;
+      if (!outputKey) {
+        send_msg_client_error(ws_msg_id, timestamp, runnerId, "VIDEO_ERR", "Resultado de vídeo sem key no S3.");
+        try {
+          await axios.post(`${users_ms}${runnerId}/process/refund/1`, {}, { httpsAgent });
+        } catch (_) {}
+        return;
+      }
+
+      const keyName = path.basename(outputKey);
+      const result = {
+        type: "video",
+        file_name: keyName,
+        img_key: keyName, 
+        img_id: process.img_id || new mongoose.Types.ObjectId(),
+        project_id: projectId,
+        user_id: ownerId,
+        token: process.token || 0,
+      };
+
+      await Result.create(result);
+
+      // Adicionar o vídeo convertido à biblioteca do projeto (RN4, REQ-VID-LIB-001)
+      const currentProject = await Project.getOne(ownerId, projectId);
+      if (currentProject) {
+        currentProject.imgs = currentProject.imgs || [];
+        currentProject.imgs.push({
+          og_uri: `./videos/users/${ownerId}/projects/${projectId}/src/${keyName}`,
+          new_uri: `./videos/users/${ownerId}/projects/${projectId}/out/${keyName}`,
+          og_img_key: keyName,
+          og_sha256: "converted",
+          mediaType: "video",
+        });
+
+        const newCommitted = Math.max(currentProject.committedToken || 0, process.token || 0);
+
+        await Project.updateRaw(ownerId, projectId, {
+          $set: {
+            imgs: currentProject.imgs,
+            committedToken: newCommitted,
+            resultsToken: newCommitted,
+          },
+          $inc: { version: 1 }
+        });
+      }
+
+      send_msg_client(ws_msg_id, timestamp, runnerId);
+      console.log(`[VIDEO] Conversão ${correlationId} concluída com sucesso!`);
+
+    } catch (err) {
+      console.error("[process_video_result_msg] error:", err);
+    }
+  });
+}
+
+// obter presigned PUT URL para upload direto de vídeo para o SeaweedFS (S3)
+router.get(
+  "/:user/:project/video/upload-url",
+  checkSharePermission,
+  requireEditPermission,
+  async (req, res) => {
+    try {
+      const ownerId = req.params.user;
+      const callerId = getCallerId(req) || ownerId;
+      const projectId = req.params.project;
+      const fileName = req.query.fileName;
+      const contentType = req.query.contentType || "video/mp4";
+
+      // 1. Bloqueio de utilizadores anónimos (REQ-VID-IMP-001, REQ-VID-IMP-010, RNG-01)
+      const access = await checkUserVideoAccess(callerId);
+      if (!access.allowed) {
+        return res.status(access.status).jsonp(access.error);
+      }
+
+      // 2. Verificar quota para utilizador registado gratuito (REQ-VID-IMP-007, REQ-VID-IMP-012)
+      if (access.userType === "free" && access.remainingOperations !== null && access.remainingOperations <= 0) {
+        return res.status(403).jsonp("Atingiu o limite de importação de vídeos seu plano. Por favor, atualize o plano ou espere até que o limite seja reposto");
+      }
+
+      if (!fileName) {
+        return res.status(400).jsonp("Falta o parâmetro fileName.");
+      }
+
+      const { get_upload_presigned_url } = require("../utils/imageStorage");
+      const resp = await get_upload_presigned_url(ownerId, projectId, "src", fileName, contentType);
+
+      return res.status(200).jsonp(resp.data);
+    } catch (err) {
+      console.error("Erro ao gerar upload presigned URL:", err);
+      return res.status(500).jsonp("Error generating presigned upload URL.");
+    }
+  }
+);
+
+// importar vídeo para um projeto (UC-VID-002)
+router.post(
+  "/:user/:project/video/import",
+  checkSharePermission,
+  requireEditPermission,
+  enforcePresenceLimit,
+  requireProjectVersion,
+  async (req, res) => {
+    const ownerId = req.params.user;
+    const callerId = getCallerId(req) || ownerId;
+    const projectId = req.params.project;
+
+    try {
+      // 1. Bloqueio de utilizadores anónimos (REQ-VID-IMP-001, REQ-VID-IMP-010, RNG-01)
+      const access = await checkUserVideoAccess(callerId);
+      if (!access.allowed) {
+        return res.status(access.status).jsonp(access.error);
+      }
+
+      // 2. Verificação e dedução de Quota Diária para utilizador Registado/Gratuito (REQ-VID-IMP-007, REQ-VID-IMP-012, REQ-VID-IMP-014, RNG-02)
+      let quotaDeducted = false;
+      if (access.userType === "free") {
+        try {
+          const quotaResp = await axios.get(`${users_ms}${callerId}/process/1`, { httpsAgent });
+          if (!quotaResp.data) {
+            return res.status(403).jsonp("Atingiu o limite de importação de vídeos seu plano. Por favor, atualize o plano ou espere até que o limite seja reposto");
+          }
+          quotaDeducted = true;
+        } catch (qErr) {
+          return res.status(403).jsonp("Atingiu o limite de importação de vídeos seu plano. Por favor, atualize o plano ou espere até que o limite seja reposto");
+        }
+      }
+
+      const { fileName, bucket, objectKey, fileHash } = req.body;
+
+      if (!fileName || !bucket || !objectKey) {
+        if (quotaDeducted) {
+          try { await axios.post(`${users_ms}${callerId}/process/refund/1`, {}, { httpsAgent }); } catch (_) {}
+        }
+        return res.status(400).jsonp("Faltam parâmetros obrigatórios para a importação do vídeo.");
+      }
+
+      const ext = fileName.split('.').pop().toLowerCase();
+      
+      // Usa a constante do topo do ficheiro (MP4, WebM, MKV, MOV)
+      if (!allowedVideoFormats.includes(ext) || ext === "original") {
+        if (quotaDeducted) {
+          try { await axios.post(`${users_ms}${callerId}/process/refund/1`, {}, { httpsAgent }); } catch (_) {}
+        }
+        return res.status(400).jsonp(`Não foi possível importar este vídeo. Formatos válidos: ${allowedVideoFormats.filter(f => f !== 'original').join(", ")}`);
+      }
+
+      const project = await Project.getOne(ownerId, projectId);
+      if (!project) {
+        if (quotaDeducted) {
+          try { await axios.post(`${users_ms}${callerId}/process/refund/1`, {}, { httpsAgent }); } catch (_) {}
+        }
+        return res.status(404).jsonp("Project not found");
+      }
+
+      const same_name_media = project.imgs.filter(
+        (i) => path.basename(i.og_uri) == fileName
+      );
+
+      if (same_name_media.length > 0) {
+        if (quotaDeducted) {
+          try { await axios.post(`${users_ms}${callerId}/process/refund/1`, {}, { httpsAgent }); } catch (_) {}
+        }
+        return res
+          .status(400)
+          .jsonp("This project already has media with that name.");
+      }
+
+      const og_uri = `./videos/users/${ownerId}/projects/${projectId}/src/${fileName}`;
+      const new_uri = `./videos/users/${ownerId}/projects/${projectId}/out/${fileName}`;
+
+      const keyName = path.basename(objectKey || fileName);
+
+      project["imgs"].push({
+        og_uri: og_uri,
+        new_uri: new_uri,
+        og_img_key: keyName,
+        og_sha256: fileHash || "unknown", 
+        mediaType: "video"
+      });
+
+      const updated = await Project.updateIfVersion(
+        ownerId,
+        projectId,
+        project,
+        req.expectedVersion
+      );
+
+      if (!updated) {
+        if (quotaDeducted) {
+          try { await axios.post(`${users_ms}${callerId}/process/refund/1`, {}, { httpsAgent }); } catch (_) {}
+        }
+        const fresh = await Project.getOne(ownerId, projectId);
+        return res.status(409).jsonp({
+          message: "Project version conflict",
+          serverVersion: fresh?.version ?? null,
+        });
+      }
+
+      res.set("X-Project-Version", String(updated.version));
+      return res.status(201).jsonp({ message: "Vídeo importado com sucesso." });
+
+    } catch (err) {
+      console.error("Erro ao importar vídeo:", err);
+      return res.status(500).jsonp("Não foi possível importar vídeo. Tente novamente.");
+    }
+  }
+);
+
+// obter detalhes e URL do vídeo exportado (UC-VID-003)
+router.get(
+  "/:user/:project/video/export",
+  checkSharePermission,
+  async (req, res) => {
+    try {
+      const ownerId = req.params.user;
+      const callerId = getCallerId(req) || ownerId;
+      const projectId = req.params.project;
+      const requestedVideoKey = req.query.videoKey || req.query.fileName;
+
+      // 1. Bloqueio de utilizadores anónimos (REQ-VID-EXP-002, RN1, RNG-01)
+      const access = await checkUserVideoAccess(callerId);
+      if (!access.allowed) {
+        return res.status(access.status).jsonp(access.error);
+      }
+
+      // 2. Verificação de quota diária do utilizador registado (REQ-VID-EXP-008, REQ-VID-EXP-009)
+      if (access.userType === "free" && access.remainingOperations !== null && access.remainingOperations <= 0) {
+        return res.status(403).jsonp({
+          error: "Atingiu o limite diário de operações do seu plano. Por favor, atualize o plano ou espere até que o limite seja reposto.",
+          limitReached: true,
+        });
+      }
+
+      const project = await Project.getOne(ownerId, projectId);
+      if (!project) return res.status(404).jsonp("Project not found");
+
+      const committed = project.committedToken || 0;
+      const results = await Result.getAllByToken(ownerId, projectId, committed);
+      let videoResults = results.filter((r) => r.type === "video");
+
+      if (requestedVideoKey) {
+        videoResults = videoResults.filter(
+          (r) => r.file_name === requestedVideoKey || r.img_key === requestedVideoKey
+        );
+      }
+
+      // Se nenhum vídeo no Result, procurar na biblioteca do projeto (REQ-VID-EXP-012: exportar tal como existe)
+      if (videoResults.length === 0 && requestedVideoKey) {
+        const foundInProject = project.imgs?.find(
+          (i) => i.og_img_key === requestedVideoKey || path.basename(i.og_uri) === requestedVideoKey
+        );
+        if (foundInProject) {
+          videoResults = [{
+            img_id: foundInProject._id || "src-video",
+            file_name: path.basename(foundInProject.og_uri),
+            img_key: foundInProject.og_img_key || path.basename(foundInProject.og_uri),
+            stage: "src",
+          }];
+        }
+      }
+
+      const { get_download_presigned_url, get_image_public_url } = require("../utils/imageStorage");
+      const ans = { videos: [] };
+
+      for (const r of videoResults) {
+        const stage = r.stage || "out";
+        const ext = r.file_name.split('.').pop().toLowerCase();
+        
+        // REQ-VID-EXP-004, REQ-VID-EXP-005, REQ-VID-EXP-007, RN2, FA1:
+        // Limitações do utilizador Registado: apenas até 720p e apenas MP4 ou WebM
+        if (access.userType === "free") {
+          const isFormatAllowed = ["mp4", "webm"].includes(ext);
+          const isResolutionExceeded = r.file_name.toLowerCase().includes("1080p");
+
+          if (!isFormatAllowed || isResolutionExceeded) {
+            return res.status(403).jsonp({
+              error: `O vídeo (${r.file_name}) excede os limites do perfil Registado (máximo 720p e formatos MP4/WebM). Esta funcionalidade é exclusiva de subscritores Premium.`,
+              isPremiumExclusive: true,
+              fileName: r.file_name,
+            });
+          }
+        }
+
+        // Link temporário de 15 minutos via imageStorageService (REQ-VID-EXP-028)
+        let downloadData;
+        try {
+          const dlResp = await get_download_presigned_url(ownerId, projectId, stage, r.img_key);
+          downloadData = dlResp.data;
+        } catch (_) {
+          const fallbackResp = await get_image_public_url(ownerId, projectId, stage, r.img_key);
+          downloadData = {
+            url: fallbackResp.data.url,
+            expiresInMinutes: 15,
+            size: 0,
+            contentType: `video/${ext}`,
+          };
+        }
+
+        ans.videos.push({
+          og_img_id: r.img_id,
+          name: r.file_name,
+          format: ext.toUpperCase(),
+          resolution: r.file_name.toLowerCase().includes("1080p") ? "1080p" : r.file_name.toLowerCase().includes("720p") ? "720p" : r.file_name.toLowerCase().includes("480p") ? "480p" : "720p",
+          size: downloadData.size || 0,
+          url: downloadData.url,
+          expiresInMinutes: downloadData.expiresInMinutes || 15,
+        });
+      }
+
+      return res.status(200).jsonp(ans);
+
+    } catch (err) {
+      console.error("Erro ao obter URL do vídeo exportado:", err);
+      return res.status(500).jsonp("Error acquiring exported video url.");
+    }
+  }
+);
+
+// registar conclusão do download de vídeo e deduzir 1 operação da quota (REQ-VID-EXP-014, REQ-VID-EXP-026)
+router.post(
+  "/:user/:project/video/export/complete",
+  checkSharePermission,
+  async (req, res) => {
+    try {
+      const callerId = getCallerId(req) || req.params.user;
+      const access = await checkUserVideoAccess(callerId);
+      if (!access.allowed) {
+        return res.status(access.status).jsonp(access.error);
+      }
+
+      if (access.userType === "free") {
+        await axios.get(`${users_ms}${callerId}/process/1`, { httpsAgent });
+      }
+
+      return res.status(200).jsonp({ success: true, message: "Exportação registada e quota deduzida com sucesso." });
+    } catch (err) {
+      console.error("Erro ao registar exportação concluída:", err);
+      return res.status(500).jsonp("Error registering export completion.");
+    }
+  }
+);
+
+// conversão de vídeo (UC-VID-001)
+router.post(
+  "/:user/:project/video/convert", 
+  checkSharePermission, 
+  requireEditPermission, 
+  enforcePresenceLimit, 
+  requireProjectVersion, 
+  async (req, res) => {
+    const ownerId = req.params.user;
+    const runnerUserId = getCallerId(req) || ownerId;
+    const projectId = req.params.project;
+
+    try {
+      // 1. Bloqueio de utilizadores anónimos (REQ-VID-SEC-001, RN1, RNG-01)
+      const access = await checkUserVideoAccess(runnerUserId);
+      if (!access.allowed) {
+        return res.status(access.status).jsonp(access.error);
+      }
+
+      // 2. Verificação de quota diária para utilizador Registado (REQ-VID-QUOTA-001, RN2, RNG-02)
+      if (access.userType === "free") {
+        try {
+          const quotaResp = await axios.get(`${users_ms}${runnerUserId}/process/1`, { httpsAgent });
+          if (!quotaResp.data) {
+            return res.status(403).jsonp("Excedeu a quota associada ao seu plano. Por favor, atualize o plano ou aguarde até ao dia seguinte");
+          }
+        } catch (qErr) {
+          return res.status(403).jsonp("Excedeu a quota associada ao seu plano. Por favor, atualize o plano ou aguarde até ao dia seguinte");
+        }
+      }
+
+      const project = await Project.getOne(ownerId, projectId);
+      if (!project) {
+        if (access.userType === "free") {
+          try { await axios.post(`${users_ms}${runnerUserId}/process/refund/1`, {}, { httpsAgent }); } catch (_) {}
+        }
+        return res.status(404).jsonp("Project not found");
+      }
+
+      const { bucket, inputKey, targetFormat, targetResolution } = req.body;
+
+      if (!inputKey || !targetFormat || !targetResolution) {
+        if (access.userType === "free") {
+          try { await axios.post(`${users_ms}${runnerUserId}/process/refund/1`, {}, { httpsAgent }); } catch (_) {}
+        }
+        return res.status(400).jsonp("Faltam parâmetros obrigatórios para a conversão de vídeo.");
+      }
+
+      const resolvedBucket = bucket || `user-${ownerId}`;
+      const resolvedInputKey = inputKey.includes("/") ? inputKey : `${projectId}/src/${inputKey}`;
+
+      const targetFormatNorm = (targetFormat || "original").toLowerCase();
+      const targetResNorm = (targetResolution || "original").toLowerCase();
+
+      // Usam as constantes do topo do ficheiro
+      if (!allowedVideoFormats.includes(targetFormatNorm)) {
+        if (access.userType === "free") {
+          try { await axios.post(`${users_ms}${runnerUserId}/process/refund/1`, {}, { httpsAgent }); } catch (_) {}
+        }
+        return res.status(400).jsonp(`Formato não suportado. Formatos válidos: ${allowedVideoFormats.join(", ")}`);
+      }
+
+      if (!allowedResolutions.includes(targetResNorm)) {
+        if (access.userType === "free") {
+          try { await axios.post(`${users_ms}${runnerUserId}/process/refund/1`, {}, { httpsAgent }); } catch (_) {}
+        }
+        return res.status(400).jsonp(`Resolução não suportada. Resoluções válidas: ${allowedResolutions.join(", ")}`);
+      }
+
+      const msg_id = `video-convert-${uuidv4()}`;
+      const correlation_id = `job-${uuidv4()}`;
+      const timestamp = new Date().toISOString();
+
+      const process = {
+        user_id: ownerId,
+        runner_id: runnerUserId,
+        project_id: projectId,
+        img_id: new mongoose.Types.ObjectId(),
+        msg_id: correlation_id,
+        cur_pos: 0,
+        og_img_uri: `s3://${resolvedBucket}/${resolvedInputKey}`,
+        new_img_uri: `s3://${resolvedBucket}/${projectId}/out/video_${Date.now()}.${targetFormatNorm}`,
+        cancelToken: project.cancelToken || 0,
+        token: project.activeToken || 0,
+        procedure: "video_convert"
+      };
+
+      await Process.create(process);
+      
+      const { send_msg_video_convert } = require("../utils/project_msg");
+      
+      send_msg_video_convert(
+        msg_id,
+        correlation_id,
+        timestamp,
+        resolvedBucket,
+        resolvedInputKey,
+        projectId,
+        targetFormatNorm,
+        targetResNorm
+      );
+
+      return res.status(202).jsonp({ 
+        message: "Conversão iniciada com sucesso",
+        jobId: correlation_id 
+      });
+
+    } catch (err) {
+      console.error("Erro ao solicitar conversão de vídeo:", err);
+      return res.status(500).jsonp("Não foi possível converter vídeo. Tente novamente.");
+    }
+  }
+);
+
+// cancelar conversão de vídeo (REQ-VID-CONV-005, FA1)
+router.post(
+  "/:user/:project/video/convert/cancel",
+  checkSharePermission,
+  requireEditPermission,
+  async (req, res) => {
+    try {
+      const ownerId = req.params.user;
+      const callerId = getCallerId(req) || ownerId;
+      const projectId = req.params.project;
+      const { correlationId, jobId } = req.body;
+      const targetJobId = correlationId || jobId;
+
+      if (!targetJobId) {
+        return res.status(400).jsonp("Falta indicar o correlationId ou jobId para cancelamento.");
+      }
+
+      const { send_msg_video_convert_cancel } = require("../utils/project_msg");
+      send_msg_video_convert_cancel(targetJobId);
+
+      // Limpar registo de processo
+      await Process.deleteByMsgId(ownerId, projectId, targetJobId);
+
+      // Devolver quota ao utilizador (RNG-02)
+      try {
+        await axios.post(`${users_ms}${callerId}/process/refund/1`, {}, { httpsAgent });
+      } catch (_) {}
+
+      return res.status(200).jsonp({ message: "Conversão cancelada com sucesso." });
+    } catch (err) {
+      console.error("Erro ao cancelar conversão:", err);
+      return res.status(500).jsonp("Error cancelling conversion.");
+    }
+  }
+);
+
+module.exports = { router, process_msg, process_video_result_msg };

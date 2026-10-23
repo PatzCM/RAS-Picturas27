@@ -1,7 +1,7 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import AppDropzone from "./app-dropzone";
-import { FileImage, ImagePlus, Plus, X } from "lucide-react";
+import { FileImage, FileVideo, ImagePlus, Plus, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { HoverCard, HoverCardTrigger } from "./ui/hover-card";
 import { HoverCardContent } from "@radix-ui/react-hover-card";
@@ -17,21 +17,47 @@ export default function ImageSubmissionArea({
 }) {
   const [files, setFiles] = useState<File[]>([]);
 
+  const isVideoFile = (f: File) => {
+    const ext = "." + f.name.split(".").pop()?.toLowerCase();
+    return (
+      f.type.startsWith("video/") ||
+      [".mp4", ".webm", ".mkv", ".mov"].includes(ext)
+    );
+  };
+
   const handleDrop = async (acceptedFiles: File[]) => {
     const compatibleFileTypes = [
       "image/png",
       "image/jpeg",
       "image/jpg",
       "application/zip",
+      "video/mp4",
+      "video/webm",
+      "video/x-matroska",
+      "video/quicktime",
+    ];
+    const compatibleExtensions = [
+      ".png",
+      ".jpeg",
+      ".jpg",
+      ".zip",
+      ".mp4",
+      ".webm",
+      ".mkv",
+      ".mov",
     ];
 
     // Extract images from zip files and filter out incompatible files
     const compatibleFiles: File[] = [];
     for (const file of acceptedFiles) {
+      const ext = "." + file.name.split(".").pop()?.toLowerCase();
       if (file.type === "application/zip") {
         const extractedFiles = await extractZipImages(file);
         compatibleFiles.push(...extractedFiles);
-      } else if (compatibleFileTypes.includes(file.type)) {
+      } else if (
+        compatibleFileTypes.includes(file.type) ||
+        compatibleExtensions.includes(ext)
+      ) {
         compatibleFiles.push(file);
       }
     }
@@ -72,7 +98,7 @@ export default function ImageSubmissionArea({
             <div className="flex flex-col gap-4 items-center justify-center max-w-[20rem]">
               <ImagePlus size={64} />
               <p className="font-medium text-lg">
-                Drag and drop images or a .zip
+                Drag and drop media (images, videos, or .zip)
               </p>
             </div>
           </AppDropzone>
@@ -89,7 +115,11 @@ export default function ImageSubmissionArea({
                   >
                     <CardContent className="py-2 px-3 relative">
                       <div className="flex flex-col items-center justify-center pointer-events-none">
-                        <FileImage className="w-10 h-7 text-primary mb-1" />
+                        {isVideoFile(file) ? (
+                          <FileVideo className="w-10 h-7 text-primary mb-1" />
+                        ) : (
+                          <FileImage className="w-10 h-7 text-primary mb-1" />
+                        )}
                         <p className="text-xs text-center truncate w-full">
                           {file.name}
                         </p>

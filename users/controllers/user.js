@@ -26,7 +26,10 @@ module.exports.getOne = async (user_id) => {
 module.exports.getOneEmail = async (email) => {
   const emailHash = hashEmail(email);
   const user = await User.findOne({ email_hash: emailHash }).exec();
-  return user ? user.toJSON() : null;
+  if (!user) return null;
+  const userObj = user.toJSON();
+  userObj.password_hash = user.password_hash;
+  return userObj;
 };
 
 

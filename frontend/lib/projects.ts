@@ -38,6 +38,7 @@ export interface ProjectImage {
   _id: string;
   name: string;
   url: string;
+  mediaType?: "image" | "video";
 }
 
 export interface ProjectImageText {
@@ -234,18 +235,42 @@ export const addProject = async ({
     throw new Error("Failed to create project");
 
   const project = response.data;
+  let currentVersion = project.version;
 
-  if (images.length > 0) {
-    await addProjectImages({
+  const isVideo = (f: File) => {
+    const ext = "." + f.name.split(".").pop()?.toLowerCase();
+    return (
+      f.type.startsWith("video/") ||
+      [".mp4", ".webm", ".mkv", ".mov"].includes(ext)
+    );
+  };
+
+  const imageFiles = images.filter((f) => !isVideo(f));
+  const videoFiles = images.filter((f) => isVideo(f));
+
+  if (imageFiles.length > 0) {
+    const lastVersion = await addProjectImages({
       uid,
       pid: project._id,
       token,
-      images,
-      projectVersion: project.version,
+      images: imageFiles,
+      projectVersion: currentVersion,
     });
+    if (lastVersion) currentVersion = Number(lastVersion);
   }
 
-  return project;
+  for (const video of videoFiles) {
+    const res = await importProjectVideo({
+      uid,
+      pid: project._id,
+      token,
+      file: video,
+      projectVersion: currentVersion,
+    });
+    if (res?.version) currentVersion = Number(res.version);
+  }
+
+  return { ...project, version: currentVersion };
 };
 
 export const deleteProject = async ({
@@ -462,6 +487,215 @@ export const addProjectImages = async ({
   }
     return lastVersion;
 
+};
+
+export const importProjectVideo = async ({
+  uid,
+  pid,
+  token,
+  file,
+  ownerId,
+  shareId,
+  projectVersion,
+  onProgress,
+}: {
+  uid: string;
+  pid: string;
+  token: string;
+  file: File;
+  ownerId?: string;
+  shareId?: string;
+  projectVersion: number;
+  onProgress?: (percent: number) => void;
+}) => {
+  const pathUid = shareId ? (ownerId ?? uid) : uid;
+  const query = buildQuery({ ownerId, shareId });
+
+  // 1. Obter presigned PUT URL
+  const separator = query ? "&" : "?";
+  const urlQuery = `${query}${separator}fileName=${encodeURIComponent(file.name)}&contentType=${encodeURIComponent(file.type || "video/mp4")}`;
+
+  const presignedResp = await api.get(
+    `/projects/${pathUid}/${pid}/video/upload-url${urlQuery}`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+    }
+  );
+
+  const { url: uploadUrl, bucket, key } = presignedResp.data;
+
+  // 2. Upload direto para o S3 via presigned PUT
+  await axios.put(uploadUrl, file, {
+    headers: {
+      "Content-Type": file.type || "video/mp4",
+    },
+    onUploadProgress: (progressEvent) => {
+      if (progressEvent.total && onProgress) {
+        const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+        onProgress(percent);
+      }
+    },
+  });
+
+  // 3. Registar o vídeo no projeto
+  const importResp = await api.post(
+    `/projects/${pathUid}/${pid}/video/import${query}`,
+    {
+      fileName: file.name,
+      bucket,
+      objectKey: key,
+      fileHash: "unknown",
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        "X-Project-Version": String(projectVersion),
+      },
+    }
+  );
+
+  const lastVersion = importResp.headers?.["x-project-version"];
+  return {
+    version: lastVersion ? Number(lastVersion) : projectVersion,
+  };
+};
+
+export const convertProjectVideo = async ({
+  uid,
+  pid,
+  token,
+  inputKey,
+  targetFormat,
+  targetResolution,
+  ownerId,
+  shareId,
+  projectVersion,
+}: {
+  uid: string;
+  pid: string;
+  token: string;
+  inputKey: string;
+  targetFormat: string;
+  targetResolution: string;
+  ownerId?: string;
+  shareId?: string;
+  projectVersion: number;
+}) => {
+  const pathUid = shareId ? (ownerId ?? uid) : uid;
+  const query = buildQuery({ ownerId, shareId });
+
+  const response = await api.post(
+    `/projects/${pathUid}/${pid}/video/convert${query}`,
+    {
+      bucket: `user-${pathUid}`,
+      inputKey,
+      targetFormat,
+      targetResolution,
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        "X-Project-Version": String(projectVersion),
+      },
+    }
+  );
+
+  return response.data;
+};
+
+export const cancelProjectVideoConvert = async ({
+  uid,
+  pid,
+  token,
+  jobId,
+  ownerId,
+  shareId,
+}: {
+  uid: string;
+  pid: string;
+  token: string;
+  jobId: string;
+  ownerId?: string;
+  shareId?: string;
+}) => {
+  const pathUid = shareId ? (ownerId ?? uid) : uid;
+  const query = buildQuery({ ownerId, shareId });
+
+  const response = await api.post(
+    `/projects/${pathUid}/${pid}/video/convert/cancel${query}`,
+    { jobId, correlationId: jobId },
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    }
+  );
+
+  return response.data;
+};
+
+export const exportProjectVideo = async ({
+  uid,
+  pid,
+  token,
+  videoKey,
+  ownerId,
+  shareId,
+}: {
+  uid: string;
+  pid: string;
+  token: string;
+  videoKey?: string;
+  ownerId?: string;
+  shareId?: string;
+}) => {
+  const pathUid = shareId ? (ownerId ?? uid) : uid;
+  const query = buildQuery({ ownerId, shareId });
+  const separator = query ? "&" : "?";
+  const videoParam = videoKey ? `${separator}videoKey=${encodeURIComponent(videoKey)}` : "";
+
+  const response = await api.get(
+    `/projects/${pathUid}/${pid}/video/export${query}${videoParam}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    }
+  );
+
+  return response.data;
+};
+
+export const completeProjectVideoExport = async ({
+  uid,
+  pid,
+  token,
+  ownerId,
+  shareId,
+}: {
+  uid: string;
+  pid: string;
+  token: string;
+  ownerId?: string;
+  shareId?: string;
+}) => {
+  const pathUid = shareId ? (ownerId ?? uid) : uid;
+  const query = buildQuery({ ownerId, shareId });
+
+  const response = await api.post(
+    `/projects/${pathUid}/${pid}/video/export/complete${query}`,
+    {},
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    }
+  );
+
+  return response.data;
 };
 
 export const deleteProjectImages = async ({

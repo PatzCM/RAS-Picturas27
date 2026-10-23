@@ -95,7 +95,12 @@ router.post("/:email/login", function (req, res, next) {
       httpsAgent: httpsAgent,
     })
     .then((resp) => res.status(201).jsonp(resp.data))
-    .catch((err) => res.status(500).jsonp("Error logging in"));
+    .catch((err) => {
+      if (err.response) {
+        return res.status(err.response.status).jsonp(err.response.data);
+      }
+      return res.status(500).jsonp("Error logging in");
+    });
 });
 
 /**

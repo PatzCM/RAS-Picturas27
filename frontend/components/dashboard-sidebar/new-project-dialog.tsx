@@ -96,10 +96,18 @@ export default function NewProjectDialog({
           onDrop={(files) => setImageFiles(files)}
           receivedFiles={files}
         />
-        <DialogFooter>
+        <DialogFooter className="flex gap-2 justify-end">
+          <Button
+            variant="outline"
+            type="button"
+            onClick={() => setOpen(false)}
+            disabled={addProject.isPending}
+          >
+            Cancel
+          </Button>
           <Button
             onClick={() => handleCreate()}
-            disabled={imageFiles.length <= 0 || name === ""}
+            disabled={imageFiles.length <= 0 || name === "" || addProject.isPending}
             className="inline-flex items-center gap-1"
           >
             <span>Create</span>
