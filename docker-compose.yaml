@@ -36,6 +36,16 @@ services:
   #     - elasticsearch
   #     - logstash
 
+  admin_frontend:
+    build: ./admin
+    networks:
+      - elk
+    environment:
+      - NEXT_PUBLIC_API_BASE_URL=/api-gateway/
+    volumes:
+      - ./admin:/app
+      - /app/node_modules
+
   nginx:
     image: nginx:latest
     ports:
