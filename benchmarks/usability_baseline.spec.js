@@ -117,47 +117,46 @@ test('Usability Baseline Benchmark: UI Blocking & Post-F5 Recovery', async ({ pa
         await page.waitForTimeout(800);
       }
     }
-
-    // --- MÉTRICA 1: Bloqueio da UI ---
-    // Encontrar link para um outro projeto na sidebar
+// --- METRIC 1: UI Blocking ---
+    // Find the target project ("teste vazio") in the sidebar
     const otherProjectLink = page
-      .locator(
-        '[data-sidebar="sidebar"] a[href*="/dashboard/"], aside a[href*="/dashboard/"], nav a[href*="/dashboard/"], a[href*="/dashboard/"]'
-      )
-      .filter({ hasNot: page.locator(`[href*="${testPid}"]`) })
+      .locator('[data-sidebar="sidebar"], aside, nav')
+      .getByText('teste vazio', { exact: true })
       .first();
 
     const hasOtherProject = await otherProjectLink.isVisible().catch(() => false);
     if (!hasOtherProject) {
       console.warn(
-        'Aviso: Não foi encontrado um segundo projeto na sidebar para medir navegação.'
+        'Warning: Project "teste vazio" not found in sidebar; measuring until overlay hides.'
       );
     }
 
     const tStartApply = Date.now();
     await applyButton.click();
 
-    // Aguarda o overlay bloqueante (bg-black/70) aparecer
+    // Wait for the blocking overlay (bg-black/70) to appear
     const overlay = page.locator(overlaySelector).first();
     await overlay.waitFor({ state: 'visible', timeout: 10000 });
 
     let metric1_ms = 0;
     if (hasOtherProject) {
-      // O clique no outro projeto da sidebar fica bloqueado pelo overlay bg-black/70.
-      // O Playwright aguarda que o overlay desapareça (fim do processamento) antes de conseguir clicar e navegar.
+      // Clicking is blocked while the bg-black/70 overlay covers the screen.
+      // Once processing completes and the overlay is removed, the click takes effect and the URL changes.
       await otherProjectLink.click({ timeout: 120000 });
-      await page.waitForURL((url) => !url.pathname.includes(testPid), { timeout: 30000 });
+      await page.waitForURL((url) => !url.pathname.includes(testPid), {
+        waitUntil: 'commit',
+        timeout: 30000,
+      });
       metric1_ms = Date.now() - tStartApply;
     } else {
-      // Se não houver outro projeto, mede até o overlay desaparecer
       await overlay.waitFor({ state: 'hidden', timeout: 120000 });
       metric1_ms = Date.now() - tStartApply;
     }
 
-    console.log(`[Métrica 1] Tempo de bloqueio da UI: ${metric1_ms} ms`);
+    console.log(`[Metric 1] UI blocking duration: ${metric1_ms} ms`);
 
-    // --- MÉTRICA 2: Recuperação pós-F5 ---
-    // Voltar a abrir o projeto de teste em edit mode
+    // --- METRIC 2: Recovery after F5 ---
+    // Reopen the test project in edit mode
     await page.goto(`${BASE_URL}/dashboard/${testPid}?mode=edit`, {
       waitUntil: 'domcontentloaded',
     });
@@ -166,21 +165,21 @@ test('Usability Baseline Benchmark: UI Blocking & Post-F5 Recovery', async ({ pa
     const applyButtonM2 = page.locator(applyButtonSelector).first();
     await applyButtonM2.waitFor({ state: 'visible', timeout: 15000 });
 
-    // Submeter o pipeline
+    // Submit pipeline
     await applyButtonM2.click();
 
-    // Aguarda início do processamento (overlay visível)
+    // Wait for processing to begin (overlay visible)
     const overlayM2 = page.locator(overlaySelector).first();
     await overlayM2.waitFor({ state: 'visible', timeout: 10000 });
 
-    // Espera 1.5s para estar a meio do processamento
+    // Wait 1.5s to reach the midpoint of processing
     await page.waitForTimeout(1500);
 
-    // Executa page.reload()
+    // Execute page.reload()
     const tReloadStart = Date.now();
     await page.reload({ waitUntil: 'domcontentloaded' });
 
-    // Verifica se a barra de progresso e o botão Cancelar voltam a ficar visíveis
+    // Check whether the progress bar and the Cancel button become visible again
     let metric2_recovered = 0;
     let metric2_recovery_ms = 0;
 
@@ -196,16 +195,16 @@ test('Usability Baseline Benchmark: UI Blocking & Post-F5 Recovery', async ({ pa
       metric2_recovered = 1;
       metric2_recovery_ms = Date.now() - tReloadStart;
       console.log(
-        `[Métrica 2] Recuperação pós-F5 BEM SUCEDIDA: ${metric2_recovery_ms} ms`
+        `[Metric 2] Post-F5 recovery SUCCEEDED: ${metric2_recovery_ms} ms`
       );
     } catch {
       metric2_recovered = 0;
       metric2_recovery_ms = 0;
-      console.log('[Métrica 2] Recuperação pós-F5 NÃO OCORREU (0)');
+      console.log('[Metric 2] Post-F5 recovery DID NOT OCCUR (0)');
     }
 
-    // Aguarda que o processamento em background termine antes da próxima iteração
-    await page.waitForTimeout(5000);
+    // Wait for residual background processing to finish before the next iteration
+    await page.waitForTimeout(Math.max(5000, metric1_ms));
 
     results.push({
       iteration,
@@ -217,5 +216,5 @@ test('Usability Baseline Benchmark: UI Blocking & Post-F5 Recovery', async ({ pa
     saveResultsCsv(results);
   }
 
-  console.log('\n--- Benchmark Finalizado. Resultados gravados em benchmarks/results.csv ---');
+  console.log('\n--- Benchmark finished. Results saved to benchmarks/results.csv ---');
 });
