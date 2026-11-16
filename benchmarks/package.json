@@ -1,0 +1,11 @@
+{
+  "name": "benchmarks",
+  "version": "1.0.0",
+  "description": "Usability baseline benchmarks for PictuRAS",
+  "scripts": {
+    "test": "playwright test usability_baseline.spec.js"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0"
+  }
+}

@@ -23,6 +23,7 @@ const {
   send_msg_client_preview,
   send_msg_client_preview_error,
   read_msg,
+  read_execution_msg,
   send_msg_project_op,   
 } = require("../utils/project_msg");
 
@@ -30,6 +31,7 @@ const Project = require("../controllers/project");
 const Process = require("../controllers/process");
 const Result = require("../controllers/result");
 const Preview = require("../controllers/preview");
+const ProjectExecution = require("../controllers/projectExecution");
 const jwt = require("jsonwebtoken");
 const { getCallerId } = require("../utils/caller");
 const { ensureEditorSlot, releaseEditorSlot } = require("../utils/presence");
@@ -165,8 +167,38 @@ function toolsEqual(a, b) {
 }
 
 
+let executionConsumerStarted = false;
+function process_execution_msg() {
+  if (executionConsumerStarted) return;
+  executionConsumerStarted = true;
+
+  read_execution_msg(async (msg) => {
+    try {
+      const content = JSON.parse(msg.content.toString());
+      const projectId = content.projectId || content.project_id;
+      const imgId = content.imgId || content.img_id;
+      const percent = content.percent;
+      const status = content.status || content.state;
+      const error = content.error || content.errorMsg;
+
+      if (!projectId) return;
+
+      await ProjectExecution.updateProgress({
+        projectId,
+        imgId,
+        percent,
+        status,
+        error,
+      });
+    } catch (err) {
+      console.error("[EXECUTION-QUEUE] Error processing progress message:", err);
+    }
+  });
+}
+
 // TODO process message according to type of output
 function process_msg() {
+  process_execution_msg();
   read_msg(async (msg) => {
 
     const timestamp = new Date().toISOString();
@@ -211,10 +243,20 @@ function process_msg() {
       if (msg_content.status === "error") {
         console.log(JSON.stringify(msg_content));
         if (/preview/.test(msg_id)) {
+          ProjectExecution.failExecution({
+            projectId: process.project_id,
+            runToken: process.token || 0,
+            error: msg_content.error?.msg || "Preview error",
+          }).catch(() => {});
           send_msg_client_preview_error(`update-client-preview-${uuidv4()}`, timestamp, runnerId, msg_content.error.code, msg_content.error.msg)
         }
         
         else {
+          ProjectExecution.failExecution({
+            projectId: process.project_id,
+            runToken: process.token || 0,
+            error: msg_content.error?.msg || "Processing error",
+          }).catch(() => {});
           send_msg_client_error(
             user_msg_id,
             timestamp,
@@ -367,6 +409,11 @@ if (/preview/.test(msg_id) && isLast) {
       runnerId,
       JSON.stringify(urls)
     );
+
+    ProjectExecution.completeExecution({
+      projectId: process.project_id,
+      runToken: process.token || 0,
+    }).catch(() => {});
   }
 }
 
@@ -423,6 +470,12 @@ if (/preview/.test(msg_id) && isLast) {
 
       // Se esta imagem acabou o pipeline, pode ser que a execução tenha terminado
       if (!/preview/.test(msg_id) && isLast) {
+        ProjectExecution.updateItemProgress({
+          projectId: process.project_id,
+          imgId: process.img_id,
+          percent: 100,
+          status: "completed",
+        }).catch(() => {});
 
         if (holdsRunCommit && chainEnd) await Process.delete(process.user_id, process.project_id, process._id);
         // A terminal source has all outputs stored; intermediate text results
@@ -458,6 +511,11 @@ if (/preview/.test(msg_id) && isLast) {
             if (!committed) return;
 
             console.log(`[COMMIT] project=${process.project_id} committedToken=${process.token || 0}`);
+
+            await ProjectExecution.completeExecution({
+              projectId: process.project_id,
+              runToken: process.token || 0,
+            }).catch(() => {});
 
           } else {
             console.log(
@@ -1064,6 +1122,49 @@ router.get("/:user/:project/advanced_tools", checkSharePermission, (req, res, ne
     .catch((_) => res.status(501).jsonp(`Error acquiring user's project`));
 });
 
+// Get project execution status
+router.get(
+  "/:user/:project/execution-status",
+  checkSharePermission,
+  async (req, res) => {
+    try {
+      const ownerId = req.params.user;
+      const projectId = req.params.project;
+
+      // Validação de acesso de leitura ao projeto
+      if (!req.sharedPermission) {
+        const caller = getCallerId(req);
+        if (!caller) return res.status(401).jsonp("Authentication required");
+        if (String(caller) !== String(ownerId)) {
+          return res.status(403).jsonp("Not allowed");
+        }
+      }
+
+      const project = req.sharedProject || (await Project.getOne(ownerId, projectId));
+      if (!project) return res.status(404).jsonp("Project not found");
+
+      const execution = await ProjectExecution.getOne(projectId);
+      if (!execution) {
+        return res.status(200).jsonp({
+          state: "idle",
+          kind: null,
+          runToken: 0,
+          seq: 0,
+          totalSteps: 0,
+          doneSteps: 0,
+          percent: 0,
+          items: [],
+        });
+      }
+
+      return res.status(200).jsonp(execution);
+    } catch (err) {
+      console.error("Error acquiring execution status:", err);
+      return res.status(500).jsonp("Error acquiring execution status");
+    }
+  }
+);
+
 // Create new project
 router.post("/:user", (req, res, next) => {
   const project = {
@@ -1170,6 +1271,19 @@ router.post("/:user/:project/preview/:img", checkSharePermission, requireEditPer
           runnerUserId,
           JSON.stringify(urls)
         );
+
+        await ProjectExecution.startExecution({
+          projectId: req.params.project,
+          userId: ownerId,
+          kind: "preview",
+          runToken: project.activeToken || 0,
+          previewImgId: req.params.img,
+        });
+        await ProjectExecution.completeExecution({
+          projectId: req.params.project,
+          runToken: project.activeToken || 0,
+        });
+
         return res.sendStatus(200);
       }
 
@@ -1240,6 +1354,14 @@ router.post("/:user/:project/preview/:img", checkSharePermission, requireEditPer
         cancelToken: project.cancelToken || 0,
         token: project.activeToken || 0,
       };
+
+      await ProjectExecution.startExecution({
+        projectId: req.params.project,
+        userId: ownerId,
+        kind: "preview",
+        runToken: project.activeToken || 0,
+        previewImgId: req.params.img,
+      });
 
       Process.create(process)
         .then(() => {
@@ -1665,6 +1787,14 @@ router.post("/:user/:project/process", checkSharePermission, requireEditPermissi
         // Register the complete batch before dispatching anything. Otherwise a
         // short first video can commit while a later source is still downloading.
         try {
+          await ProjectExecution.startExecution({
+            projectId: req.params.project,
+            userId: ownerId,
+            kind: "apply",
+            runToken: runToken,
+            imgs: project.imgs,
+          });
+
           await dispatchProcessBatch(pendingJobs, {
             create: (job) => Process.create(job),
             remove: (job) => Process.delete(job.user_id, job.project_id, job._id),
@@ -2271,6 +2401,12 @@ router.delete(
       // invalidar sempre execução atual
       project.activeToken = (project.activeToken || 0) + 1;
 
+      await ProjectExecution.cancelExecution({
+        projectId: projectId,
+        userId: ownerId,
+        runToken: project.activeToken,
+      });
+
       // reset pending
       project.pendingAdvancedOps = 0;
 
@@ -2730,4 +2866,4 @@ router.post(
   }
 );
 
-module.exports = { router, process_msg };
+module.exports = { router, process_msg, process_execution_msg };

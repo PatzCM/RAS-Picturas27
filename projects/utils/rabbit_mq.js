@@ -10,10 +10,17 @@ const rabbit_mq_sv = `amqp://${rabbit_username}:${rabbit_password}@${rabbit_host
 
 function send_rabbit_msg(msg, queue) {
     amqp.connect(rabbit_mq_sv, (err_sv, connection) => {
-        if (err_sv) throw err_sv;
+        if (err_sv) {
+            console.error(`[RABBIT] Error connecting to send to ${queue}:`, err_sv.message);
+            return;
+        }
         
-        connection.createChannel( (err_conn, channel) => {
-            if (err_conn) throw err_conn;
+        connection.createChannel((err_conn, channel) => {
+            if (err_conn) {
+                console.error(`[RABBIT] Error creating channel to send to ${queue}:`, err_conn.message);
+                try { connection.close(); } catch (_) {}
+                return;
+            }
             
             channel.assertExchange(exchange, 'direct', {
                 durable: true
@@ -23,34 +30,66 @@ function send_rabbit_msg(msg, queue) {
         });
         
         setTimeout(() => {
-            connection.close();
+            try { connection.close(); } catch (_) {}
         }, 500);
     });
-    
 }
 
 function read_rabbit_msg(queue, callback) {
     amqp.connect(rabbit_mq_sv, (err_sv, connection) => {
-        if (err_sv) throw err_sv;
+        if (err_sv) {
+            console.error(`[RABBIT] Connection error on ${queue}:`, err_sv.message);
+            setTimeout(() => read_rabbit_msg(queue, callback), 3000);
+            return;
+        }
+
+        connection.on("error", (err) => {
+            console.error(`[RABBIT] Connection error on ${queue}:`, err.message);
+        });
+
+        connection.on("close", () => {
+            console.warn(`[RABBIT] Connection closed on ${queue}, reconnecting...`);
+            setTimeout(() => read_rabbit_msg(queue, callback), 3000);
+        });
 
         connection.createChannel((err_conn, channel) => {
-            if (err_conn) throw err_conn;
+            if (err_conn) {
+                console.error(`[RABBIT] Channel error on ${queue}:`, err_conn.message);
+                try { connection.close(); } catch (_) {}
+                return;
+            }
 
             channel.assertExchange(exchange, 'direct', {
                 durable: true
-              });
+            });
 
             channel.assertQueue(queue, { durable: true }, (err_queue, q) => {
-                if(err_queue) throw err_queue;
+                if (err_queue) {
+                    console.error(`[RABBIT] Assert queue error on ${queue}:`, err_queue.message);
+                    try { connection.close(); } catch (_) {}
+                    return;
+                }
 
-                channel.consume(q.queue, (msg) => {
-                    if(msg != null){
-                        callback(msg);
-                        // Acknowledge the message
-                        channel.ack(msg);
+                channel.bindQueue(q.queue, exchange, queue, {}, (err_bind) => {
+                    if (err_bind) {
+                        console.error(`[RABBIT] Bind queue error on ${queue}:`, err_bind.message);
                     }
-                }, {
-                    noAck: false
+
+                    channel.consume(q.queue, (msg) => {
+                        if (msg != null) {
+                            try {
+                                callback(msg);
+                            } catch (e) {
+                                console.error(`[RABBIT] Error in consumer callback for ${queue}:`, e);
+                            }
+                            // Acknowledge the message
+                            try {
+                                channel.ack(msg);
+                            } catch (_) {}
+                        }
+                    }, {
+                        noAck: false
+                    });
                 });
             });
         });
