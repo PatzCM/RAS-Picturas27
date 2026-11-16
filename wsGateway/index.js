@@ -2,7 +2,11 @@ const http = require("http");
 const socketIo = require('socket.io');
 const jwt = require("jsonwebtoken");
 
-const { read_rabbit_msg } = require("./utils/rabbit_mq.js");
+const { read_rabbit_msg, send_rabbit_msg } = require("./utils/rabbit_mq.js");
+
+const PROJECTS_URL = process.env.PROJECTS_URL || "http://projects:9001";
+const PROJECTS_EXECUTION_QUEUE = "projects_execution_queue";
+
 const httpServer = http.createServer();
 httpServer.listen(4000);
 
@@ -13,6 +17,23 @@ const io = socketIo(httpServer, {
     },
     // options
 });
+
+async function fetchExecutionSnapshot(socket, { projectId, ownerId, share }) {
+    const targetOwner = ownerId || socket.userId;
+    if (!targetOwner || !projectId) return null;
+
+    const query = share ? `?share=${encodeURIComponent(share)}` : "";
+    const url = `${PROJECTS_URL}/${encodeURIComponent(targetOwner)}/${encodeURIComponent(projectId)}/execution-status${query}`;
+
+    const headers = {};
+    if (socket.authToken) {
+        headers["Authorization"] = `Bearer ${socket.authToken}`;
+    }
+
+    const response = await fetch(url, { headers });
+    if (!response.ok) return null;
+    return await response.json();
+}
 
 io.on("connection", (socket) => {
     console.log("a user connected");
@@ -25,23 +46,42 @@ io.on("connection", (socket) => {
                 return;
             }
 
+            socket.userId = String(payload.id);
+            socket.authToken = token;
             console.log("Connecting to room:", payload.id)
             socket.join(payload.id);
         });
     }
 
-    socket.on("join-project", (projectId) => {
+    socket.on("join-project", async (data, ack) => {
+        const params = typeof data === "string" ? { projectId: data } : (data || {});
+        const { projectId, ownerId, share } = params;
+
         if (typeof projectId === "string" && projectId.length > 0) {
             socket.join(`project:${projectId}`);
+
+            try {
+                const snapshot = await fetchExecutionSnapshot(socket, { projectId, ownerId, share });
+                if (snapshot) {
+                    socket.emit("execution-snapshot", snapshot);
+                }
+                if (typeof ack === "function") ack({ ok: true, snapshot });
+            } catch (err) {
+                console.error("Failed to fetch execution snapshot:", err.message);
+                if (typeof ack === "function") ack({ ok: true, snapshot: null });
+            }
+        } else if (typeof ack === "function") {
+            ack({ ok: false, error: "Invalid projectId" });
         }
-        });
+    });
 
 
-    socket.on("leave-project", (projectId) => {
+    socket.on("leave-project", (data) => {
+        const projectId = typeof data === "string" ? data : data?.projectId;
         if (typeof projectId === "string" && projectId.length > 0) {
             socket.leave(`project:${projectId}`);
         }
-        });
+    });
         
     socket.on("disconnect", () => {
         console.log("A user disconnected");
@@ -49,7 +89,7 @@ io.on("connection", (socket) => {
 
 });
 
-// id do user como room id
+// User ID as room ID
 
 function process_msg() {
     read_rabbit_msg('ws_queue', (msg) => {
@@ -61,8 +101,20 @@ function process_msg() {
 
         console.log('Received msg:', JSON.stringify(msg_content));
 
+        // Persisted execution status updates emitted by projects service
+        if (/update-client-execution-/.test(msg_id)) {
+            if (user) {
+                io.to(String(user)).emit("execution-update", msg_content);
+            }
+            if (msg_content.projectId) {
+                io.to(`project:${msg_content.projectId}`).emit("execution-update", msg_content);
+            }
+        }
+
         // Video editing progress, as a percentage
-        if (/update-client-video-progress/.test(msg_id)) {
+        else if (/update-client-video-progress/.test(msg_id)) {
+            send_rabbit_msg(msg_content, PROJECTS_EXECUTION_QUEUE);
+
             io.to(user).emit("video-progress", {
                 projectId: msg_content.projectId,
                 imgId: msg_content.imgId,
@@ -87,6 +139,7 @@ function process_msg() {
         }
 
         else if (/update-client-process/.test(msg_id)) {
+            send_rabbit_msg(msg_content, PROJECTS_EXECUTION_QUEUE);
 
             if (status == "error") {
                 const error_code = msg_content.errorCode;
