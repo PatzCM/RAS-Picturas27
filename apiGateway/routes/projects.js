@@ -909,6 +909,23 @@ router.post("/:user/:project/dirty", auth.checkToken, (req, res) => {
 });
 
 
+router.get("/:user/:project/execution-status", auth.checkToken, (req, res) => {
+	const ownerId = req.query.owner || req.params.user;
+	const callerId = req.authUserId || req.params.user;
+
+axios
+	.get(projectsURL + `${ownerId}/${req.params.project}/execution-status`, {
+		httpsAgent,
+		params: req.query.share ? { share: req.query.share } : undefined,
+		headers: {
+			Authorization: req.headers["authorization"],
+			"X-Caller-Id": callerId,
+		},
+	})
+	.then((resp) => res.status(200).send(resp.data))
+	.catch((err) => forwardAxiosError(res, err, "Error getting execution status"));
+});
+
 // ================== END PRESENCE ==================
 
 module.exports = router;
