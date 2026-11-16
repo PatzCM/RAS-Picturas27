@@ -19,7 +19,7 @@ test.use({
 test.setTimeout(900000); // 15 minutes total for N=5 iterations
 
 function saveResultsCsv(results) {
-  const csvPath = path.join(__dirname, 'results_metric1.csv');
+  const csvPath = path.join(__dirname, 'results_baseline_metric1.csv');
   const header = 'iteration,metric1_ui_blocking_ms,total_processing_ms\n';
   const rows = results
     .map(
@@ -200,5 +200,5 @@ test('Usability Baseline Benchmark: Metric 1 - UI Blocking Duration', async ({ p
     await page.waitForTimeout(2000);
   }
 
-  console.log('\n--- Metric 1 benchmark finished. Results saved to benchmarks/results_metric1.csv ---');
+  console.log('\n--- Metric 1 benchmark finished. Results saved to benchmarks/results_baseline_metric1.csv ---');
 });

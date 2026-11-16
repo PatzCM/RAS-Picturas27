@@ -19,7 +19,7 @@ test.use({
 test.setTimeout(300000); // 5 minutes total for N=5 iterations
 
 function saveResultsCsv(results) {
-  const csvPath = path.join(__dirname, 'results_metric2.csv');
+  const csvPath = path.join(__dirname, 'results_baseline_metric2.csv');
   const header = 'iteration,metric2_recovered,metric2_recovery_time_ms\n';
   const rows = results
     .map(
@@ -175,5 +175,5 @@ test('Usability Baseline Benchmark: Metric 2 - Post-F5 State Recovery', async ({
     await page.waitForTimeout(1000);
   }
 
-  console.log('\n--- Metric 2 benchmark finished. Results saved to benchmarks/results_metric2.csv ---');
+  console.log('\n--- Metric 2 benchmark finished. Results saved to benchmarks/results_baseline_metric2.csv ---');
 });
