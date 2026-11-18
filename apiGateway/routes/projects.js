@@ -20,7 +20,8 @@ const httpsAgent = new https.Agent({
   key: key,
 });
 
-const storage = multer.memoryStorage();
+// Uploads go to a temporary file on disk (os.tmpdir) instead of memory
+const storage = multer.diskStorage({});
 const upload = multer({ storage: storage });
 
 const projectsURL = "https://projects:9001/";
@@ -408,14 +409,18 @@ router.post(
  */
 router.post(
   "/:user/:project/img",
-  upload.single("image"),
+  // Check the login before receiving the file
   auth.checkToken,
+  upload.single("image"),
   function (req, res, next) {
     const ownerId = req.query.owner || req.params.user;
     const callerId = req.authUserId || req.params.user;
 
+    // Remove the temporary file when the request ends
+    res.on("close", () => fs.unlink(req.file.path, () => {}));
+
     const data = new FormData();
-    data.append("image", req.file.buffer, {
+    data.append("image", fs.createReadStream(req.file.path), {
       filename: req.file.originalname,
       contentType: req.file.mimetype,
     });
@@ -457,14 +462,18 @@ router.post(
  */
 router.post(
   "/:user/:project/video",
-  upload.single("video"),
+  // Check the login before receiving the file
   auth.checkToken,
+  upload.single("video"),
   function (req, res, next) {
     const ownerId = req.query.owner || req.params.user;
     const callerId = req.authUserId || req.params.user;
 
+    // Remove the temporary file when the request ends
+    res.on("close", () => fs.unlink(req.file.path, () => {}));
+
     const data = new FormData();
-    data.append("video", req.file.buffer, {
+    data.append("video", fs.createReadStream(req.file.path), {
       filename: req.file.originalname,
       contentType: req.file.mimetype,
     });
