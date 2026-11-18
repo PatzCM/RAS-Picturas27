@@ -6,6 +6,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { v4: uuidv4 } = require("uuid");
+const crypto = require("crypto");
 
 // Accepted input containers and codecs
 const VIDEO_EXTENSIONS = [".mp4", ".mov", ".webm"];
@@ -80,34 +81,40 @@ function ffprobe(filePath) {
   });
 }
 
-// Reads the characteristics of an in-memory video
-async function probeVideoBuffer(buffer, originalname) {
-  const tmp = path.join(os.tmpdir(), `${uuidv4()}${path.extname(originalname || ".mp4")}`);
-  fs.writeFileSync(tmp, buffer);
-  try {
-    const data = await ffprobe(tmp);
-    const streams = data.streams || [];
-    const video = streams.find((s) => s.codec_type === "video");
-    const audio = streams.find((s) => s.codec_type === "audio");
-    if (!video) throw new Error("The file has no video stream");
+// Reads the characteristics of a video saved on disk
+// (the file is not loaded into memory)
+async function probeVideoFile(filePath, sizeBytes) {
+  const data = await ffprobe(filePath);
+  const streams = data.streams || [];
+  const video = streams.find((s) => s.codec_type === "video");
+  const audio = streams.find((s) => s.codec_type === "audio");
+  if (!video) throw new Error("The file has no video stream");
 
-    const duration = parseFloat((data.format || {}).duration || video.duration || "0");
-    const [n, d] = String(video.avg_frame_rate || video.r_frame_rate || "0/1").split("/");
-    const fps = parseFloat(d) ? parseFloat(n) / parseFloat(d) : 0;
+  const duration = parseFloat((data.format || {}).duration || video.duration || "0");
+  const [n, d] = String(video.avg_frame_rate || video.r_frame_rate || "0/1").split("/");
+  const fps = parseFloat(d) ? parseFloat(n) / parseFloat(d) : 0;
 
-    return {
-      duration,
-      width: video.width,
-      height: video.height,
-      fps: Math.round(fps * 100) / 100,
-      video_codec: video.codec_name,
-      audio_codec: audio ? audio.codec_name : null,
-      format_name: (data.format || {}).format_name,
-      size_bytes: buffer.length,
-    };
-  } finally {
-    fs.rmSync(tmp, { force: true });
-  }
+  return {
+    duration,
+    width: video.width,
+    height: video.height,
+    fps: Math.round(fps * 100) / 100,
+    video_codec: video.codec_name,
+    audio_codec: audio ? audio.codec_name : null,
+    format_name: (data.format || {}).format_name,
+    size_bytes: sizeBytes,
+  };
+}
+
+// SHA-256 of a file, read in chunks so it never sits whole in memory
+function sha256File(filePath) {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash("sha256");
+    fs.createReadStream(filePath)
+      .on("data", (chunk) => hash.update(chunk))
+      .on("end", () => resolve(hash.digest("hex")))
+      .on("error", reject);
+  });
 }
 
 // Validates a video against the accepted formats and the profile limits.
@@ -216,7 +223,8 @@ module.exports = {
   isVideoFile,
   isVideoMedia,
   videoOutputName,
-  probeVideoBuffer,
+  probeVideoFile,
+  sha256File,
   validateVideo,
   imageTools,
   videoPipeline,
