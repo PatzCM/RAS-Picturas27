@@ -283,15 +283,29 @@ router.get(
     axios
       .get(projectsURL + `${ownerId}/${req.params.project}/process`, {
         httpsAgent,
-        responseType: "arraybuffer",
+        // Receive the ZIP in chunks (stream) instead of whole in memory
+        responseType: "stream",
         params: req.query.share ? { share: req.query.share } : undefined,
         headers: {
           Authorization: req.headers["authorization"],
           "X-Caller-Id": callerId,
         },
       })
-      .then((resp) => res.status(200).send(resp.data))
-      .catch((err) => forwardAxiosError(res, err, "mensagem fallback"));
+      .then((resp) => {
+        res.status(200);
+        if (resp.headers["content-type"]) res.set("Content-Type", resp.headers["content-type"]);
+        if (resp.headers["content-disposition"]) res.set("Content-Disposition", resp.headers["content-disposition"]);
+        // Pass the ZIP through to the browser chunk by chunk
+        resp.data.pipe(res);
+      })
+      .catch((err) => {
+        // With a stream response the error body is also a stream: pass it through
+        if (err.response?.data?.pipe) {
+          res.status(err.response.status);
+          return err.response.data.pipe(res);
+        }
+        forwardAxiosError(res, err, "mensagem fallback");
+      });
   }
 );
 
