@@ -19,7 +19,7 @@ test.use({
 test.setTimeout(900000); // 15 minutes total for N=5 iterations
 
 function saveResultsCsv(results) {
-  const csvPath = path.join(__dirname, 'results_baseline_metric1.csv');
+  const csvPath = path.join(__dirname, 'results_baseline_metric1_1.csv');
   const header = 'iteration,metric1_ui_blocking_ms,total_processing_ms\n';
   const rows = results
     .map(
