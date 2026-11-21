@@ -3,7 +3,12 @@
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, arrayMove, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { SortableToolItem } from "./sortable-tool-item";
-import { useProjectInfo, useSetProjectTools, useCurrentImage } from "@/providers/project-provider";
+import {
+  useProjectInfo,
+  useSetProjectTools,
+  useCurrentImage,
+  useCanEditProject,
+} from "@/providers/project-provider";
 import { useSession } from "@/providers/session-provider";
 import {
   useReorderProjectTools,
@@ -20,6 +25,8 @@ import { useQueryClient } from "@tanstack/react-query";
 
 export function AppliedToolsList() {
   const project = useProjectInfo();
+  // false for read-only shares and while the project is being processed
+  const canEdit = useCanEditProject();
   const setTools = useSetProjectTools();
   const session = useSession();
   const searchParams = useSearchParams();
@@ -85,6 +92,7 @@ export function AppliedToolsList() {
   }
 
   function handleDragEnd(event: any) {
+    if (!canEdit) return;
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
@@ -131,6 +139,7 @@ export function AppliedToolsList() {
   }
 
   function handleRemove(id: string) {
+    if (!canEdit) return;
     const opId = crypto.randomUUID();
     deleteTool.mutate(
       {
@@ -245,7 +254,7 @@ export function AppliedToolsList() {
             size="icon"
             className="h-6 w-6"
             onClick={handleUndo}
-            disabled={tools.length === 0 || deleteTool.isPending}
+            disabled={!canEdit || tools.length === 0 || deleteTool.isPending}
             title="Reverter última edição"
           >
             <Undo2 className="h-3 w-3" />
@@ -256,7 +265,7 @@ export function AppliedToolsList() {
             size="icon"
             className="h-6 w-6"
             onClick={handleReset}
-            disabled={tools.length === 0 || clearTools.isPending}
+            disabled={!canEdit || tools.length === 0 || clearTools.isPending}
             title="Reset para versão original"
           >
             <RotateCcw className="h-3 w-3" />
@@ -271,7 +280,11 @@ export function AppliedToolsList() {
       )}
 
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-        <SortableContext items={tools.map((t) => t._id)} strategy={verticalListSortingStrategy}>
+        <SortableContext
+          items={tools.map((t) => t._id)}
+          strategy={verticalListSortingStrategy}
+          disabled={!canEdit}
+        >
           <div className="flex max-h-40 flex-col gap-1 overflow-y-auto">
             {tools.map((tool) => (
               <SortableToolItem key={tool._id} tool={tool} onRemove={handleRemove} />

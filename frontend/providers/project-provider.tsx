@@ -17,6 +17,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useSetProjectDirty } from "@/lib/mutations/projects";
 import { useToast } from "@/hooks/use-toast";
 import { useGetSocket } from "@/lib/queries/projects";
+import { useProjectRoom } from "@/providers/processing-provider";
 
 interface ProjectContextData {
   project: SingleProject;
@@ -63,16 +64,9 @@ export function ProjectProvider({
   const [tools, setTools] = useState(project.tools);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
-  // entrar na room do projeto
-  useEffect(() => {
-    if (!socket.data) return;
-    const projectId = project._id;
-    socket.data.emit("join-project", projectId);
-
-    return () => {
-      socket.data?.emit("leave-project", projectId);
-    };
-  }, [socket.data, project._id]);
+  // Join the project room through the shared, ref-counted membership so
+  // leaving here does not drop the room the page or an active run still needs.
+  useProjectRoom({ projectId: project._id, ownerId: ownerId ?? session.user._id, share: shareId });
 
   // manter state tools alinhado com o project vindo do backend
   useEffect(() => {

@@ -1030,6 +1030,98 @@ export const cancelProjectProcess = async ({
   return response.headers?.["x-project-version"];
 };
 
+// ================== EXECUTION STATUS ==================
+
+export type ExecutionState = "idle" | "running" | "completed" | "failed" | "cancelled";
+export type ExecutionKind = "apply" | "preview" | null;
+
+export interface ExecutionItem {
+  imgId: string;
+  state: ExecutionState;
+  percent: number;
+}
+
+// Persisted progress of the latest execution of a project. The HTTP endpoint
+// returns the raw document (project_id) while socket updates carry projectId,
+// so both shapes are accepted and normalized by normalizeExecutionStatus.
+export interface ExecutionStatus {
+  projectId: string;
+  state: ExecutionState;
+  kind: ExecutionKind;
+  runToken: number;
+  seq: number;
+  startedAt: string | null;
+  finishedAt: string | null;
+  totalSteps: number;
+  doneSteps: number;
+  percent: number;
+  items: ExecutionItem[];
+  error: string | null;
+}
+
+const EXECUTION_STATES: ExecutionState[] = ["idle", "running", "completed", "failed", "cancelled"];
+
+export const normalizeExecutionStatus = (
+  raw: any,
+  fallbackProjectId?: string,
+): ExecutionStatus | null => {
+  if (!raw || typeof raw !== "object") return null;
+  const projectId = String(raw.projectId ?? raw.project_id ?? fallbackProjectId ?? "");
+  if (!projectId) return null;
+
+  const state = EXECUTION_STATES.includes(raw.state ?? raw.status)
+    ? (raw.state ?? raw.status)
+    : "idle";
+  const error =
+    raw.error == null
+      ? null
+      : typeof raw.error === "string"
+        ? raw.error
+        : String(raw.error.msg ?? raw.error.message ?? "Processing error");
+
+  return {
+    projectId,
+    state,
+    kind: raw.kind === "apply" || raw.kind === "preview" ? raw.kind : null,
+    runToken: Number(raw.runToken) || 0,
+    seq: Number(raw.seq) || 0,
+    startedAt: raw.startedAt ?? null,
+    finishedAt: raw.finishedAt ?? null,
+    totalSteps: Number(raw.totalSteps) || 0,
+    doneSteps: Number(raw.doneSteps) || 0,
+    percent: Math.min(100, Math.max(0, Math.round(Number(raw.percent) || 0))),
+    items: Array.isArray(raw.items)
+      ? raw.items.map((it: any) => ({
+          imgId: String(it?.imgId ?? ""),
+          state: EXECUTION_STATES.includes(it?.state) ? it.state : "idle",
+          percent: Number(it?.percent) || 0,
+        }))
+      : [],
+    error,
+  };
+};
+
+export const fetchExecutionStatus = async ({
+  uid,
+  pid,
+  token,
+  ownerId,
+  shareId,
+}: {
+  uid: string;
+  pid: string;
+  token: string;
+  ownerId?: string;
+  shareId?: string;
+}) => {
+  const query = buildQuery({ ownerId, shareId });
+  const pathUid = pathUidFor(uid, ownerId, shareId);
+  const response = await api.get(`/projects/${pathUid}/${pid}/execution-status${query}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return normalizeExecutionStatus(response.data, pid);
+};
+
 export const assistantSuggest = async (params: {
   uid: string;
   pid: string;
