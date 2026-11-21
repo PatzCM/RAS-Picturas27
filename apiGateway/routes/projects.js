@@ -20,7 +20,8 @@ const httpsAgent = new https.Agent({
   key: key,
 });
 
-const storage = multer.memoryStorage();
+// Uploads go to a temporary file on disk (os.tmpdir) instead of memory
+const storage = multer.diskStorage({});
 const upload = multer({ storage: storage });
 
 const projectsURL = "https://projects:9001/";
@@ -282,15 +283,29 @@ router.get(
     axios
       .get(projectsURL + `${ownerId}/${req.params.project}/process`, {
         httpsAgent,
-        responseType: "arraybuffer",
+        // Receive the ZIP in chunks (stream) instead of whole in memory
+        responseType: "stream",
         params: req.query.share ? { share: req.query.share } : undefined,
         headers: {
           Authorization: req.headers["authorization"],
           "X-Caller-Id": callerId,
         },
       })
-      .then((resp) => res.status(200).send(resp.data))
-      .catch((err) => forwardAxiosError(res, err, "mensagem fallback"));
+      .then((resp) => {
+        res.status(200);
+        if (resp.headers["content-type"]) res.set("Content-Type", resp.headers["content-type"]);
+        if (resp.headers["content-disposition"]) res.set("Content-Disposition", resp.headers["content-disposition"]);
+        // Pass the ZIP through to the browser chunk by chunk
+        resp.data.pipe(res);
+      })
+      .catch((err) => {
+        // With a stream response the error body is also a stream: pass it through
+        if (err.response?.data?.pipe) {
+          res.status(err.response.status);
+          return err.response.data.pipe(res);
+        }
+        forwardAxiosError(res, err, "mensagem fallback");
+      });
   }
 );
 
@@ -408,14 +423,18 @@ router.post(
  */
 router.post(
   "/:user/:project/img",
-  upload.single("image"),
+  // Check the login before receiving the file
   auth.checkToken,
+  upload.single("image"),
   function (req, res, next) {
     const ownerId = req.query.owner || req.params.user;
     const callerId = req.authUserId || req.params.user;
 
+    // Remove the temporary file when the request ends
+    res.on("close", () => fs.unlink(req.file.path, () => {}));
+
     const data = new FormData();
-    data.append("image", req.file.buffer, {
+    data.append("image", fs.createReadStream(req.file.path), {
       filename: req.file.originalname,
       contentType: req.file.mimetype,
     });
@@ -457,14 +476,18 @@ router.post(
  */
 router.post(
   "/:user/:project/video",
-  upload.single("video"),
+  // Check the login before receiving the file
   auth.checkToken,
+  upload.single("video"),
   function (req, res, next) {
     const ownerId = req.query.owner || req.params.user;
     const callerId = req.authUserId || req.params.user;
 
+    // Remove the temporary file when the request ends
+    res.on("close", () => fs.unlink(req.file.path, () => {}));
+
     const data = new FormData();
-    data.append("video", req.file.buffer, {
+    data.append("video", fs.createReadStream(req.file.path), {
       filename: req.file.originalname,
       contentType: req.file.mimetype,
     });

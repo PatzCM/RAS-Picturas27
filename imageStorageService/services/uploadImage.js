@@ -1,3 +1,4 @@
+const fs = require("fs");
 const s3 = require("./s3Client");
 const { BUCKET, objectKey, ensureBucket } = require("./storage");
 const { v4: uuidv4 } = require("uuid");
@@ -12,7 +13,8 @@ async function uploadImage(userId, projectId, file, stage) {
   const params = {
     Bucket: BUCKET,
     Key: objectKey(userId, projectId, stage, fileName),
-    Body: file.buffer,
+    // Send the file in chunks (stream) from disk, not from memory
+    Body: fs.createReadStream(file.path),
     ContentType: file.mimetype,
   };
 
