@@ -1,6 +1,6 @@
-iteration,metric1_ui_blocking_ms,total_processing_ms
-1,65845,65845
-2,67092,67092
-3,67006,67006
-4,66246,66246
-5,63978,63978
+iteration,metric1_ui_blocking_ms
+1,65845
+2,67092
+3,67006
+4,66246
+5,63978

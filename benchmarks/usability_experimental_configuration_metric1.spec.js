@@ -22,13 +22,12 @@ test.setTimeout(900000);
 
 function saveResultsCsv(results) {
   const csvPath = path.join(__dirname, 'results_experimental_configuration_metric1.csv');
-  const header = 'iteration,metric1_ui_blocking_ms,total_processing_ms\n';
+  const header = 'iteration,metric1_ui_blocking_ms\n';
   const rows = results
-    .map((r) => `${r.iteration},${r.metric1_ui_blocking_ms},${r.total_processing_ms}`)
+    .map((r) => `${r.iteration},${r.metric1_ui_blocking_ms}`)
     .join('\n');
   fs.writeFileSync(csvPath, header + rows + '\n', 'utf8');
 }
-
 async function login(page) {
   await page.goto(`${BASE_URL}/login`, { waitUntil: 'domcontentloaded' });
 
@@ -208,21 +207,20 @@ test('Usability Experimental Configuration Benchmark: Metric 1 - UI Blocking Dur
     );
     const metric1_ms = Date.now() - tStartApply;
 
-    const observedProcessingMs = processingEndedAt > 0 ? processingEndedAt - tStartApply : 0;
+    
 
     await openProject(page, testPid);
     await stopResidualProcessing(page);
 
-    const totalProcessingMs = observedProcessingMs > 0 ? observedProcessingMs : Date.now() - tStartApply;
+    
     applyClickedAt = 0;
 
     console.log(`[Metric 1] Time until navigation to another project: ${metric1_ms} ms`);
-    console.log(`[Iteration ${iteration}] Processing duration before cleanup: ${totalProcessingMs} ms`);
+   
 
     results.push({
       iteration,
       metric1_ui_blocking_ms: metric1_ms,
-      total_processing_ms: totalProcessingMs,
     });
 
     saveResultsCsv(results);

@@ -18,14 +18,12 @@ test.use({
 
 test.setTimeout(900000); // 15 minutes total for N=5 iterations
 
+
 function saveResultsCsv(results) {
-  const csvPath = path.join(__dirname, 'results_baseline_metric1_1.csv');
-  const header = 'iteration,metric1_ui_blocking_ms,total_processing_ms\n';
+  const csvPath = path.join(__dirname, 'results_baseline_metric1.csv');
+  const header = 'iteration,metric1_ui_blocking_ms\n';
   const rows = results
-    .map(
-      (r) =>
-        `${r.iteration},${r.metric1_ui_blocking_ms},${r.total_processing_ms}`
-    )
+    .map((r) => `${r.iteration},${r.metric1_ui_blocking_ms}`)
     .join('\n');
   fs.writeFileSync(csvPath, header + rows + '\n', 'utf8');
 }
@@ -183,15 +181,14 @@ test('Usability Baseline Benchmark: Metric 1 - UI Blocking Duration', async ({ p
 
     // Confirm backend tool execution has completely finished before next iteration
     await completionPromise;
-    const totalProcessingMs = Date.now() - tStartApply;
+    
 
     console.log(`[Metric 1] UI blocking duration: ${metric1_ms} ms`);
-    console.log(`[Iteration ${iteration}] Total video processing duration: ${totalProcessingMs} ms`);
+    
 
     results.push({
       iteration,
       metric1_ui_blocking_ms: metric1_ms,
-      total_processing_ms: totalProcessingMs,
     });
 
     saveResultsCsv(results);
