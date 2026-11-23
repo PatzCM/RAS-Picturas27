@@ -47,9 +47,9 @@ CSV files are saved in `benchmarks/` and overwritten after every iteration:
 
 | File | Columns |
 | --- | --- |
-| `results_baseline_metric1.csv` | `iteration,metric1_ui_blocking_ms,total_processing_ms` |
+| `results_baseline_metric1.csv` | `iteration,metric1_ui_blocking_ms` |
 | `results_baseline_metric2.csv` | `iteration,metric2_recovered,metric2_recovery_time_ms` |
-| `results_experimental_configuration_metric1.csv` | `iteration,metric1_ui_blocking_ms,total_processing_ms` |
+| `results_experimental_configuration_metric1.csv` | `iteration,metric1_ui_blocking_ms` |
 | `results_experimental_configuration_metric2.csv` | `iteration,metric2_recovered,metric2_recovery_time_ms` |
 
 `metric2_recovered` is `1` when recovery succeeds, `0` otherwise; recovery time is in milliseconds. The current baseline specs actually write `results_baseline_metric1_1.csv` and `results_baseline_metric2_1.csv`.
