@@ -59,7 +59,8 @@ const {
   isVideoFile,
   isVideoMedia,
   videoOutputName,
-  probeVideoBuffer,
+  probeVideoFile,
+  sha256File,
   validateVideo,
   imageTools,
   videoPipeline,
@@ -71,7 +72,8 @@ const {
 const { persistFrameResults } = require("../utils/frameResults");
 const { dispatchProcessBatch } = require("../utils/processBatch");
 
-const storage = multer.memoryStorage();
+// Uploads go to a temporary file on disk (os.tmpdir) instead of memory
+const storage = multer.diskStorage({});
 var upload = multer({ storage: storage });
 
 const key = fs.readFileSync(__dirname + "/../certs/selfsigned.key");
@@ -1036,12 +1038,17 @@ router.get("/:user/:project/process", checkSharePermission, (req, res, next) => 
       const committed = project.committedToken || 0;
       const results = await Result.getAllByToken(req.params.user, req.params.project, committed);
 
-      const result_path = `/../images/users/${req.params.user}/projects/${req.params.project}/tmp`;
+      // Unique temp folder per download, so two downloads do not clash
+      const result_path = `/../images/users/${req.params.user}/projects/${req.params.project}/tmp-${uuidv4()}`;
+      const tmp_dir = path.join(__dirname, result_path);
 
-      fs.mkdirSync(path.join(__dirname, result_path), { recursive: true });
+      fs.mkdirSync(tmp_dir, { recursive: true });
+
+      // Remove the temporary files when the request ends
+      res.on("close", () => fs.rmSync(tmp_dir, { recursive: true, force: true }));
 
       for (let r of results) {
-        const res_path = path.join(__dirname, result_path, r.file_name);
+        const res_path = path.join(tmp_dir, r.file_name);
 
         const resp = await get_image_internal_url(
           r.user_id,
@@ -1061,24 +1068,22 @@ router.get("/:user/:project/process", checkSharePermission, (req, res, next) => 
           file_resp.data.pipe(writer); // Pipe AFTER setting up the event handlers
         });
 
-        const fs_res = fs.readFileSync(res_path);
-        zip.file(r.file_name, fs_res);
+        // Add the file as a stream: it is only read while the ZIP is being sent
+        zip.file(r.file_name, fs.createReadStream(res_path));
       }
 
-      fs.rmSync(path.join(__dirname, result_path), {
-        recursive: true,
-        force: true,
-      });
-
-      const ans = await zip.generateAsync({ type: "blob" });
-
-      res.type(ans.type);
+      res.type("application/zip");
       res.set(
         "Content-Disposition",
         `attachment; filename=user_${req.params.user}_project_${req.params.project}_results.zip`
       );
-      const b = await ans.arrayBuffer();
-      res.status(200).send(Buffer.from(b));
+      res.status(200);
+
+      // Build and send the ZIP in chunks (stream), never whole in memory
+      zip
+        .generateNodeStream({ type: "nodebuffer", streamFiles: true })
+        .on("error", () => res.destroy())
+        .pipe(res);
     })
     .catch((_) =>
       res.status(601).jsonp(`Error acquiring project's processing result`)
@@ -1395,6 +1400,9 @@ function addProjectMedia(kind) {
       res.status(400).jsonp("No file found");
       return;
     }
+    
+    // Remove the temporary file when the request ends
+    res.on("close", () => fs.unlink(req.file.path, () => {}));
 
     const fileIsVideo = isVideoFile(req.file.originalname, req.file.mimetype);
     if (kind === "image" && fileIsVideo) {
@@ -1428,7 +1436,7 @@ function addProjectMedia(kind) {
           } catch (_) {}
 
           try {
-            videoMeta = await probeVideoBuffer(req.file.buffer, req.file.originalname);
+            videoMeta = await probeVideoFile(req.file.path, req.file.size);
           } catch (e) {
             return res.status(400).jsonp(e.message);
           }
@@ -1441,7 +1449,7 @@ function addProjectMedia(kind) {
 
         try {
           const data = new FormData();
-          data.append("file", req.file.buffer, {
+          data.append("file", fs.createReadStream(req.file.path), {
             filename: req.file.originalname,
             contentType: req.file.mimetype,
           });
@@ -1461,8 +1469,7 @@ function addProjectMedia(kind) {
             const out_name = isVideo ? videoOutputName(req.file.originalname) : req.file.originalname;
             const new_uri = `./images/users/${req.params.user}/projects/${req.params.project}/out/${out_name}`;
 
-            const crypto = require("crypto");
-            const sha = crypto.createHash("sha256").update(req.file.buffer).digest("hex");
+            const sha = await sha256File(req.file.path);
 
             // Insert new image
             project["imgs"].push({
