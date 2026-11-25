@@ -191,6 +191,7 @@ function process_execution_msg() {
         percent,
         status,
         error,
+        allowComplete: false,
       });
     } catch (err) {
       console.error("[EXECUTION-QUEUE] Error processing progress message:", err);
@@ -472,13 +473,6 @@ if (/preview/.test(msg_id) && isLast) {
 
       // Se esta imagem acabou o pipeline, pode ser que a execução tenha terminado
       if (!/preview/.test(msg_id) && isLast) {
-        ProjectExecution.updateItemProgress({
-          projectId: process.project_id,
-          imgId: process.img_id,
-          percent: 100,
-          status: "completed",
-        }).catch(() => {});
-
         if (holdsRunCommit && chainEnd) await Process.delete(process.user_id, process.project_id, process._id);
         // A terminal source has all outputs stored; intermediate text results
         // retain their barrier until their successor is registered below.
@@ -525,6 +519,16 @@ if (/preview/.test(msg_id) && isLast) {
             );
             return;
           }
+        } else {
+          await ProjectExecution.updateItemProgress(
+            {
+              projectId: process.project_id,
+              imgId: process.img_id,
+              percent: 100,
+              status: "completed",
+            },
+            { allowComplete: false }
+          ).catch(() => {});
         }
       }
 
@@ -1151,6 +1155,7 @@ router.get(
       const execution = await ProjectExecution.getOne(projectId);
       if (!execution) {
         return res.status(200).jsonp({
+          project_id: projectId,
           state: "idle",
           kind: null,
           runToken: 0,

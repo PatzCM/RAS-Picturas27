@@ -85,7 +85,14 @@ async function initExecution({ projectId, userId, kind, runToken, imgs, previewI
   return saved;
 }
 
-async function updateProgress({ projectId, imgId, percent, status, error }) {
+async function updateProgress(
+  { projectId, imgId, percent, status, error, allowComplete = true },
+  options = {}
+) {
+  const effectiveAllowComplete =
+    options && typeof options.allowComplete === "boolean"
+      ? options.allowComplete
+      : allowComplete;
   let execution = await getOne(projectId);
 
   if (!execution) {
@@ -176,6 +183,7 @@ async function updateProgress({ projectId, imgId, percent, status, error }) {
     execution.error = error || "Processing failed";
     execution.finishedAt = new Date();
   } else if (
+    effectiveAllowComplete &&
     execution.doneSteps >= execution.totalSteps &&
     execution.totalSteps > 0 &&
     execution.percent >= 100
@@ -321,8 +329,21 @@ async function failExecution({ projectId, runToken, error }) {
   return saved;
 }
 
-async function updateItemProgress({ projectId, imgId, percent, status }) {
-  return await updateProgress({ projectId, imgId, percent, status });
+async function updateItemProgress(
+  { projectId, imgId, percent, status, allowComplete = true },
+  options = {}
+) {
+  const effectiveAllowComplete =
+    options && typeof options.allowComplete === "boolean"
+      ? options.allowComplete
+      : allowComplete;
+  return await updateProgress({
+    projectId,
+    imgId,
+    percent,
+    status,
+    allowComplete: effectiveAllowComplete,
+  });
 }
 
 module.exports = {

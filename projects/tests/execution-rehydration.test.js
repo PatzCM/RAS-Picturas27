@@ -395,3 +395,110 @@ test("cancellation and state protection: late progress updates do not revert can
   assert.equal(reinitiated.runToken, 3);
   assert.equal(reinitiated.seq, cancelled.seq + 1);
 });
+
+/**
+ * Test 4: Defer completion until commit
+ * Confirms that a 100% progress update with allowComplete: false keeps
+ * state === "running" (and finishedAt unset) until completeExecution is called.
+ */
+test("allowComplete: false keeps state running at 100% until completeExecution is called", async (t) => {
+  const modelPath = require.resolve("../models/projectExecution");
+  const msgPath = require.resolve("../utils/project_msg");
+  const controllerPath = require.resolve("../controllers/projectExecution");
+
+  const originalModel = require.cache[modelPath];
+  const originalMsg = require.cache[msgPath];
+  const originalController = require.cache[controllerPath];
+
+  t.after(() => {
+    if (originalModel) require.cache[modelPath] = originalModel;
+    else delete require.cache[modelPath];
+
+    if (originalMsg) require.cache[msgPath] = originalMsg;
+    else delete require.cache[msgPath];
+
+    if (originalController) require.cache[controllerPath] = originalController;
+    else delete require.cache[controllerPath];
+  });
+
+  let store = {};
+  const wsPublished = [];
+
+  require.cache[msgPath] = {
+    id: msgPath,
+    filename: msgPath,
+    loaded: true,
+    exports: {
+      send_msg_execution_update(execution) {
+        const doc = execution && execution.toObject ? execution.toObject() : execution;
+        wsPublished.push(doc);
+      },
+    },
+  };
+
+  require.cache[modelPath] = {
+    id: modelPath,
+    filename: modelPath,
+    loaded: true,
+    exports: {
+      findOne(filter) {
+        return {
+          exec: async () => {
+            const pid = filter.project_id || filter.$or?.[0]?.project_id;
+            return store[String(pid)] ? { ...store[String(pid)] } : null;
+          },
+        };
+      },
+      findOneAndUpdate(filter, update) {
+        return {
+          exec: async () => {
+            const pid = filter.project_id || filter.$or?.[0]?.project_id;
+            const current = store[String(pid)] || {};
+            const updated = { ...current, ...(update.$set || update) };
+            store[String(pid)] = updated;
+            return { ...updated };
+          },
+        };
+      },
+    },
+  };
+
+  delete require.cache[controllerPath];
+  const ProjectExecutionController = require("../controllers/projectExecution");
+
+  await ProjectExecutionController.initExecution({
+    projectId: "proj-defer-complete",
+    userId: "user-test",
+    kind: "apply",
+    runToken: 1,
+    imgs: [{ _id: "img-1" }],
+  });
+
+  // 100% progress with allowComplete: false must NOT transition to "completed"
+  const afterProgress = await ProjectExecutionController.updateItemProgress(
+    {
+      projectId: "proj-defer-complete",
+      imgId: "img-1",
+      percent: 100,
+      status: "completed",
+    },
+    { allowComplete: false }
+  );
+
+  assert.equal(afterProgress.state, "running");
+  assert.equal(afterProgress.percent, 100);
+  assert.equal(afterProgress.doneSteps, 1);
+  assert.equal(afterProgress.finishedAt, null);
+  assert.equal(wsPublished[wsPublished.length - 1].state, "running");
+
+  // Only completeExecution (after commitRunIfActive) transitions to "completed"
+  const completed = await ProjectExecutionController.completeExecution({
+    projectId: "proj-defer-complete",
+    runToken: 1,
+  });
+
+  assert.equal(completed.state, "completed");
+  assert.equal(completed.percent, 100);
+  assert.ok(completed.finishedAt);
+  assert.equal(wsPublished[wsPublished.length - 1].state, "completed");
+});
